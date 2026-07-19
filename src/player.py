@@ -1,5 +1,5 @@
 import pygame
-from src.skill import Fireball # Import Fireball
+from src.skill import Fireball, IceBolt # Import Fireball and IceBolt
 from src.item import HealthPotion, ManaPotion # Import potion items
 
 class Player(pygame.sprite.Sprite):
@@ -51,6 +51,15 @@ class Player(pygame.sprite.Sprite):
         self.fireball_current_cooldown = 0
         self.fireball_speed = 8
 
+        # Magic Skill attributes (Ice Bolt)
+        self.icebolt_damage = 20
+        self.icebolt_mp_cost = 15
+        self.icebolt_cooldown = 90 # frames (1.5 seconds)
+        self.icebolt_current_cooldown = 0
+        self.icebolt_speed = 7
+        self.icebolt_slow_duration = 180 # frames (3 seconds)
+        self.icebolt_slow_percentage = 0.5 # 50% slow
+
         # Dash attributes
         self.is_dashing = False
         self.dash_duration = 15 # frames
@@ -74,6 +83,13 @@ class Player(pygame.sprite.Sprite):
 
     def handle_input(self, event):
         if event.type == pygame.KEYDOWN:
+            # Potions can be used during dialogue
+            if event.key == pygame.K_1: # Use Health Potion
+                return self.use_health_potion()
+            if event.key == pygame.K_2: # Use Mana Potion
+                return self.use_mana_potion()
+
+            # Other actions are blocked during dialogue
             if event.key == pygame.K_SPACE:
                 if self.on_ground:
                     self.jump()
@@ -81,17 +97,15 @@ class Player(pygame.sprite.Sprite):
                 elif self.can_double_jump:
                     self.jump() # Perform second jump
                     self.can_double_jump = False # Consume double jump
-            if event.key == pygame.K_j and not self.is_attacking and self.attack_cooldown <= 0 and not self.is_dashing:
+            elif event.key == pygame.K_j and not self.is_attacking and self.attack_cooldown <= 0 and not self.is_dashing:
                 self.start_attack()
-            if event.key == pygame.K_k and not self.is_dashing: # Can't cast while dashing
+            elif event.key == pygame.K_k and not self.is_dashing: # Can't cast while dashing
                 return self.cast_fireball() # Return fireball if cast successfully
-            if event.key == pygame.K_LSHIFT and self.dash_current_cooldown <= 0:
+            elif event.key == pygame.K_l and not self.is_dashing: # Cast Ice Bolt
+                return self.cast_icebolt()
+            elif event.key == pygame.K_LSHIFT and self.dash_current_cooldown <= 0:
                 self.start_dash()
-            if event.key == pygame.K_1: # Use Health Potion
-                return self.use_health_potion()
-            if event.key == pygame.K_2: # Use Mana Potion
-                return self.use_mana_potion()
-        return None # No fireball cast or no relevant key pressed
+        return None # No spell cast or relevant key pressed, or action blocked by dialogue
 
     def jump(self):
         self.vel_y = self.jump_strength
@@ -120,9 +134,28 @@ class Player(pygame.sprite.Sprite):
             print(f"Player cast Fireball! MP: {self.mp}/{self.max_mp}")
             return fireball
         elif self.mp < self.fireball_mp_cost:
-            print("Not enough MP to cast Fireball!")
+            return "Not enough MP for Fireball!"
         elif self.fireball_current_cooldown > 0:
-            print("Fireball is on cooldown!")
+            return "Fireball is on cooldown!"
+        return None
+
+    def cast_icebolt(self):
+        if self.mp >= self.icebolt_mp_cost and self.icebolt_current_cooldown <= 0:
+            self.mp -= self.icebolt_mp_cost
+            self.icebolt_current_cooldown = self.icebolt_cooldown
+
+            # Ice Bolt spawn position
+            ib_x = self.rect.centerx + (self.rect.width // 2 * (1 if self.facing_right else -1))
+            ib_y = self.rect.centery
+
+            icebolt = IceBolt(ib_x, ib_y, (1 if self.facing_right else -1), self.icebolt_damage, self.icebolt_speed,
+                              self.icebolt_slow_duration, self.icebolt_slow_percentage)
+            print(f"Player cast Ice Bolt! MP: {self.mp}/{self.max_mp}")
+            return icebolt
+        elif self.mp < self.icebolt_mp_cost:
+            return "Not enough MP for Ice Bolt!"
+        elif self.icebolt_current_cooldown > 0:
+            return "Ice Bolt is on cooldown!"
         return None
 
     def start_dash(self):
@@ -146,7 +179,8 @@ class Player(pygame.sprite.Sprite):
         else: # Normal horizontal movement if not dashing
             keys = pygame.key.get_pressed()
             self.vel_x = 0
-            if not self.is_attacking: # Cannot move while attacking (simple version)
+            # Allow movement during dialogue if not already attacking/dashing
+            if not self.is_attacking:
                 if keys[pygame.K_a]:
                     self.vel_x = -self.walk_speed
                     self.facing_right = False
@@ -219,9 +253,11 @@ class Player(pygame.sprite.Sprite):
                 self.attack_cooldown = 0
                 self.attack_animation_timer = 0 # Reset animation timer
 
-        # Update magic cooldown
+        # Update magic cooldowns
         if self.fireball_current_cooldown > 0:
             self.fireball_current_cooldown -= 1
+        if self.icebolt_current_cooldown > 0:
+            self.icebolt_current_cooldown -= 1
 
         # Update dash cooldown
         if self.dash_current_cooldown > 0 and not self.is_dashing: # Only decrement if not currently dashing
