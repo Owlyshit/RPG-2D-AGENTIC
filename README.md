@@ -1,2 +1,3 @@
-# RPG-2D-AGENTIC
-0 code written all agents, expriements, 0 confirmations , 1 script and ADK
+# 2D Side-Scrolling RPG (MapleStory Inspired)
+
+This is the initial setup for our game development.
