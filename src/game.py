@@ -1,7 +1,7 @@
 import pygame
 import sys
 from src.player import Player
-from src.enemy import Slime, KingSlime # Import KingSlime
+from src.enemy import Slime, KingSlime, MiniSlime # Import MiniSlime
 from src.map import Platform, Portal, GameMap
 from src.npc import NPC, Quest
 from src.skill import Fireball # Import Fireball
@@ -11,7 +11,7 @@ class SpawnPoint:
     def __init__(self, x, y, enemy_type, respawn_delay, initial_patrol_range=None, initial_walk_speed=None):
         self.x = x
         self.y = y
-        self.enemy_type = enemy_type # String, e.g., 'Slime', 'KingSlime'
+        self.enemy_type = enemy_type # String, e.g., 'Slime', 'KingSlime', 'MiniSlime'
         self.respawn_delay = respawn_delay # in frames
         self.current_respawn_timer = 0
         self.is_active = False # True if an enemy is currently spawned at this point
@@ -45,6 +45,7 @@ class Game:
         self.projectiles = pygame.sprite.Group() # New group for projectiles
 
         self.enemy_spawn_points = [] # List to manage enemy respawns
+        self.boss_instance = None # To hold a reference to the KingSlime boss
 
         # Load Sounds (Placeholder - replace with actual paths)
         try:
@@ -125,14 +126,24 @@ class Game:
                 walk_speed=spawn_point.initial_walk_speed if spawn_point.initial_walk_speed else self.enemy_walk_speed,
                 gravity=self.gravity
             )
-        elif spawn_point.enemy_type == 'KingSlime': # Handle KingSlime spawning
+        elif spawn_point.enemy_type == 'MiniSlime': # Handle MiniSlime spawning
+            new_enemy = MiniSlime(
+                x=spawn_point.x,
+                y=spawn_point.y,
+                patrol_range=spawn_point.initial_patrol_range if spawn_point.initial_patrol_range else 50,
+                walk_speed=spawn_point.initial_walk_speed if spawn_point.initial_walk_speed else self.enemy_walk_speed * 1.2,
+                gravity=self.gravity
+            )
+        elif spawn_point.enemy_type == 'KingSlime': # Handle KingSlime (Boss) spawning
             new_enemy = KingSlime(
                 x=spawn_point.x,
                 y=spawn_point.y,
-                patrol_range=spawn_point.initial_patrol_range if spawn_point.initial_patrol_range else 50, # KingSlime might have smaller patrol
+                patrol_range=spawn_point.initial_patrol_range if spawn_point.initial_patrol_range else 70,
                 walk_speed=spawn_point.initial_walk_speed if spawn_point.initial_walk_speed else self.enemy_walk_speed * 0.7,
                 gravity=self.gravity
             )
+            new_enemy.set_minion_spawn_callback(self.spawn_minions) # Set the callback for minion spawning
+            self.boss_instance = new_enemy # Keep a direct reference to the boss
         
         if new_enemy:
             self.enemies.add(new_enemy)
@@ -140,6 +151,27 @@ class Game:
             spawn_point.spawned_enemy_ref = new_enemy
             spawn_point.is_active = True
             print(f"Respawned {spawn_point.enemy_type} at ({spawn_point.x}, {spawn_point.y})")
+
+    def spawn_minions(self, boss_x, boss_y, count):
+        for _ in range(count):
+            # Spawn minions near the boss, slightly offset
+            offset_x = random.randint(-50, 50)
+            # Ensure minion doesn't spawn exactly on the boss, and is on the ground
+            spawn_x = boss_x + offset_x
+            # Y position will be adjusted by gravity, so just below boss is fine
+            spawn_y = boss_y - 20 
+            # Create a dummy spawn point for the minion, as they don't respawn independently
+            minion_sp = SpawnPoint(spawn_x, spawn_y, 'MiniSlime', 0, initial_patrol_range=30, initial_walk_speed=self.enemy_walk_speed * 1.5)
+            new_minion = MiniSlime(
+                x=minion_sp.x,
+                y=minion_sp.y,
+                patrol_range=minion_sp.initial_patrol_range,
+                walk_speed=minion_sp.initial_walk_speed,
+                gravity=self.gravity
+            )
+            self.enemies.add(new_minion)
+            self.all_sprites.add(new_minion)
+            print(f"Spawned a MiniSlime at ({spawn_x}, {spawn_y})")
 
 
     def setup_map(self):
@@ -158,7 +190,8 @@ class Game:
         self.enemy_spawn_points.append(SpawnPoint(300, self.screen_height - 80, 'Slime', 300, initial_patrol_range=100, initial_walk_speed=self.enemy_walk_speed))
         self.enemy_spawn_points.append(SpawnPoint(550, self.screen_height - 80, 'Slime', 300, initial_patrol_range=100, initial_walk_speed=self.enemy_walk_speed))
         self.enemy_spawn_points.append(SpawnPoint(200, self.screen_height - 180, 'Slime', 300, initial_patrol_range=50, initial_walk_speed=self.enemy_walk_speed)) # Another slime on a platform
-        self.enemy_spawn_points.append(SpawnPoint(500, self.screen_height - 280, 'KingSlime', 600, initial_patrol_range=70, initial_walk_speed=self.enemy_walk_speed)) # Replaced a slime with KingSlime
+        # KingSlime (Boss) spawn point - much longer respawn delay
+        self.enemy_spawn_points.append(SpawnPoint(500, self.screen_height - 280, 'KingSlime', 36000, initial_patrol_range=70, initial_walk_speed=self.enemy_walk_speed * 0.7)) # Replaced a slime with KingSlime
         self.enemy_spawn_points.append(SpawnPoint(700, self.screen_height - 80, 'Slime', 300, initial_patrol_range=120, initial_walk_speed=self.enemy_walk_speed)) # A fifth slime
 
         # Initial enemy spawn
@@ -296,17 +329,18 @@ class Game:
                     self.player.apply_knockback(knockback_direction, 5)
 
             # Check for KingSlime stomp attack damage
-            for enemy in self.enemies:
-                if isinstance(enemy, KingSlime) and enemy.is_stomping_jump and enemy.on_ground: # KingSlime just landed from a stomp
+            # This check is now explicitly for KingSlime's JUMP_ATTACK state after landing
+            if self.boss_instance and isinstance(self.boss_instance, KingSlime):
+                if self.boss_instance.state == "IDLE" and self.boss_instance.on_ground and self.boss_instance.is_mid_air_jump_attack == False: # Just landed from a jump_attack
                     # Check if player is in stomp damage range
-                    distance_x = abs(self.player.rect.centerx - enemy.rect.centerx)
-                    distance_y = abs(self.player.rect.bottom - enemy.rect.bottom) # Check proximity to ground
-                    if distance_x <= enemy.stomp_land_damage_range and distance_y <= 10: # Player is on the ground near KingSlime
+                    distance_x = abs(self.player.rect.centerx - self.boss_instance.rect.centerx)
+                    distance_y = abs(self.player.rect.bottom - self.boss_instance.rect.bottom) # Check proximity to ground
+                    if distance_x <= self.boss_instance.stomp_land_damage_range and distance_y <= 10: # Player is on the ground near KingSlime
                         if not self.player.invincible:
                             print("Player hit by King Slime stomp!")
-                            self.player.take_damage(enemy.stomp_aoe_damage)
+                            self.player.take_damage(self.boss_instance.stomp_aoe_damage)
                             self.player_hit_sound.play()
-                            knockback_direction = 1 if self.player.rect.centerx > enemy.rect.centerx else -1
+                            knockback_direction = 1 if self.player.rect.centerx > self.boss_instance.rect.centerx else -1
                             self.player.apply_knockback(knockback_direction, 10) # Stronger knockback from stomp
 
 
@@ -314,14 +348,26 @@ class Game:
             for portal in pygame.sprite.spritecollide(self.player, self.portals, False):
                 print(f"Player entered portal! Destination: {portal.destination_map_id}, Spawn: {portal.destination_spawn_point_id}")
                 # Simulate map transition (for now, just print and maybe reposition player)
+                # If this were a boss arena portal, we'd check `requiresBossDefeatStatus` here.
+                # For now, if the boss is present and player leaves, reset boss.
+                if self.boss_instance and self.boss_instance.state != "DEFEATED":
+                    # If player leaves boss arena mid-fight, reset boss state and clear minions
+                    self.boss_instance.reset_boss_state()
+                    # Remove any MiniSlimes (summoned minions) if the player leaves
+                    for enemy in list(self.enemies):
+                        if isinstance(enemy, MiniSlime):
+                            enemy.kill()
+                            self.enemies.remove(enemy)
+                            self.all_sprites.remove(enemy)
+                    print("Player left boss arena mid-fight. King Slime state reset and minions despawned.")
+
                 self.player.rect.x = 50
                 self.player.rect.y = self.screen_height - 100 # Reset player position
                 # In a real game, this would load a new map
 
             # Projectile-enemy collision
             for projectile in self.projectiles:
-                collided_enemies = pygame.sprite.spritecollide(projectile, self.enemies, False)
-                for enemy in collided_enemies:
+                collided_enemies = pygame.sprite.spritecollide(projectile, self.enemies, False):
                     if not enemy.invincible:
                         enemy.take_damage(projectile.damage)
                         self.enemy_hit_sound.play() # Play enemy hit sound
@@ -330,14 +376,22 @@ class Game:
                         enemy.apply_knockback(knockback_direction, 10)
                         if enemy.hp <= 0:
                             self.player.gain_exp(enemy.exp_reward)
-                            self.player.increment_quest_kill_count(type(enemy).__name__) # type(enemy).__name__ gives 'Slime' or 'KingSlime'
+                            self.player.increment_quest_kill_count(type(enemy).__name__) # type(enemy).__name__ gives 'Slime' or 'KingSlime' or 'MiniSlime'
+                            # If the defeated enemy is the KingSlime, also check for a unique item drop (placeholder)
+                            if isinstance(enemy, KingSlime):
+                                print("King Slime defeated! Unique item drop (placeholder).")
+                                # Add actual item drop logic here
+
                             # Find spawn point for defeated enemy
+                            enemy_was_spawned_at_point = False
                             for sp in self.enemy_spawn_points:
                                 if sp.spawned_enemy_ref == enemy:
                                     sp.is_active = False
                                     sp.current_respawn_timer = sp.respawn_delay
                                     sp.spawned_enemy_ref = None
+                                    enemy_was_spawned_at_point = True
                                     break
+                            # Minions don't have a respawn point, they just die
                             enemy.kill()
                             self.enemy_death_sound.play() # Play enemy death sound
                             print(f"{type(enemy).__name__} defeated! Player gained {enemy.exp_reward} EXP. Player EXP: {self.player.exp}")
@@ -355,14 +409,22 @@ class Game:
                             enemy.apply_knockback(knockback_direction, 10)
                             if enemy.hp <= 0:
                                 self.player.gain_exp(enemy.exp_reward)
-                                self.player.increment_quest_kill_count(type(enemy).__name__) # type(enemy).__name__ gives 'Slime' or 'KingSlime'
+                                self.player.increment_quest_kill_count(type(enemy).__name__) # type(enemy).__name__ gives 'Slime' or 'KingSlime' or 'MiniSlime'
+                                # If the defeated enemy is the KingSlime, also check for a unique item drop (placeholder)
+                                if isinstance(enemy, KingSlime):
+                                    print("King Slime defeated! Unique item drop (placeholder).")
+                                    # Add actual item drop logic here
+
                                 # Find spawn point for defeated enemy
+                                enemy_was_spawned_at_point = False
                                 for sp in self.enemy_spawn_points:
                                     if sp.spawned_enemy_ref == enemy:
                                         sp.is_active = False
                                         sp.current_respawn_timer = sp.respawn_delay
                                         sp.spawned_enemy_ref = None
+                                        enemy_was_spawned_at_point = True
                                         break
+                                # Minions don't have a respawn point, they just die
                                 enemy.kill()
                                 self.enemy_death_sound.play() # Play enemy death sound
                                 print(f"{type(enemy).__name__} defeated! Player gained {enemy.exp_reward} EXP. Player EXP: {self.player.exp}")
@@ -428,7 +490,7 @@ class Game:
         pygame.draw.rect(self.screen, (255, 255, 255), dialogue_rect, 2, border_radius=5) # White border
 
         # Render text
-        lines = text.split('\\n')
+        lines = text.split('\n')
         y_offset = 10
         for line in lines:
             text_surface = self.dialogue_font.render(line, True, self.TEXT_COLOR)

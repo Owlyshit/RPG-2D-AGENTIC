@@ -1,4 +1,5 @@
 import pygame
+import random
 
 class Slime(pygame.sprite.Sprite):
     def __init__(self, x, y, patrol_range, walk_speed, gravity, width=32, height=32, color=(0, 0, 255), hp=50, max_hp=50, contact_damage=10, exp_reward=10):
@@ -91,8 +92,25 @@ class Slime(pygame.sprite.Sprite):
         self.vel_x = direction * strength * 0.5 # Slimes move slower with knockback
         self.vel_y = -strength / 3 # Minor vertical knockback
 
+class MiniSlime(Slime):
+    def __init__(self, x, y, patrol_range, walk_speed, gravity):
+        super().__init__(
+            x, y,
+            patrol_range=patrol_range,
+            walk_speed=walk_speed * 1.2, # Mini Slime is a bit faster
+            gravity=gravity,
+            width=24, # Smaller
+            height=24, # Smaller
+            color=(0, 200, 0), # Green color
+            hp=20, # Less HP
+            max_hp=20,
+            contact_damage=5, # Less contact damage
+            exp_reward=5 # Less EXP
+        )
+        self.name = "MiniSlime" # For quest tracking and identification
 
-class KingSlime(Slime): # Inherit from Slime
+
+class KingSlime(Slime): # This is now the Boss Slime
     def __init__(self, x, y, patrol_range, walk_speed, gravity):
         super().__init__(
             x, y,
@@ -102,42 +120,136 @@ class KingSlime(Slime): # Inherit from Slime
             width=64, # Larger
             height=64, # Larger
             color=(70, 0, 150), # Darker purple/blue
-            hp=200, # More HP
-            max_hp=200, # Set max HP for King Slime
+            hp=500, # Significantly more HP for boss
+            max_hp=500, # Set max HP for King Slime
             contact_damage=25, # More contact damage
-            exp_reward=200 # More EXP
+            exp_reward=500 # Much more EXP
         )
         self.name = "KingSlime" # For quest tracking
 
-        # Stomp Attack specific attributes
-        self.stomp_cooldown = 180 # frames (3 seconds)
-        self.stomp_current_cooldown = self.stomp_cooldown
-        self.stomp_jump_strength = -8 # A distinct jump for stomp
-        self.stomp_land_damage_range = 70 # pixels radius around King Slime on landing
-        self.is_stomping_jump = False # Flag to track stomp jump
-        self.stomp_aoe_damage = 30 # Damage dealt by stomp land
+        # Boss States
+        self.state = "IDLE" # IDLE, JUMP_ATTACK, SUMMON_MINIONS, HURT, DEFEATED
+        self.target_player = None # Reference to player for advanced AI
 
+        # Jump Attack specific attributes (enhanced from stomp)
+        self.jump_attack_cooldown = 240 # frames (4 seconds)
+        self.jump_attack_current_cooldown = random.randint(60, self.jump_attack_cooldown) # Random initial cooldown
+        self.jump_strength = -12 # Higher jump for boss
+        self.stomp_land_damage_range = 80 # pixels radius around King Slime on landing
+        self.stomp_aoe_damage = 40 # Damage dealt by stomp land
+        self.is_mid_air_jump_attack = False # Flag to track boss is in the air for jump attack
+
+        # Summon Minions specific attributes
+        self.summon_minions_cooldown = 360 # frames (6 seconds)
+        self.summon_minions_current_cooldown = random.randint(120, self.summon_minions_cooldown)
+        self.num_minions_to_summon = random.randint(1, 3)
+        self.minions_spawned_callback = None # Callback to Game class to spawn minions
+
+        # General Boss Attributes
+        self.attack_damage = 0 # Handled by contact_damage and stomp_aoe_damage
+        self.attack_range = 0 # Handled by contact_damage and stomp_aoe_damage
+        self.minion_spawn_cooldown = 0 # Not used directly, managed by summon_minions_current_cooldown
+
+        self.last_attack_type = None # To alternate attacks
+
+    def set_minion_spawn_callback(self, callback):
+        self.minions_spawned_callback = callback
 
     def update(self, platforms):
         # Store previous on_ground state before calling super.update
         was_on_ground_before_update = self.on_ground
 
+        # Check if boss is defeated
+        if self.hp <= 0 and self.state != "DEFEATED":
+            self.state = "DEFEATED"
+            self.vel_x = 0
+            self.vel_y = 0
+            # Play death animation/sound etc. (handled by Game class for now)
+            return # Stop further updates for defeated boss
+
         super().update(platforms) # Update basic movement, gravity, and invincibility
 
-        # Stomp attack logic
-        if self.on_ground and not was_on_ground_before_update: # Just landed
-            if self.is_stomping_jump:
+        # State machine for boss behavior
+        if self.state == "IDLE":
+            if self.on_ground:
+                # Decide next action based on cooldowns and strategy
+                self.jump_attack_current_cooldown -= 1
+                self.summon_minions_current_cooldown -= 1
+
+                if self.jump_attack_current_cooldown <= 0 and self.last_attack_type != "JUMP_ATTACK":
+                    self.state = "JUMP_ATTACK"
+                    print("King Slime preparing Jump Attack!")
+                elif self.summon_minions_current_cooldown <= 0 and self.last_attack_type != "SUMMON_MINIONS":
+                    self.state = "SUMMON_MINIONS"
+                    print("King Slime preparing Summon Minions!")
+                else:
+                    # If both cooldowns are active or just attacked, just patrol or stand still
+                    pass # Super.update handles patrolling
+
+        elif self.state == "JUMP_ATTACK":
+            if self.on_ground and not self.is_mid_air_jump_attack: # Initiating jump
+                self.vel_y = self.jump_strength
+                self.on_ground = False
+                self.is_mid_air_jump_attack = True
+                self.vel_x = 0 # Stop horizontal movement during jump attack
+            elif self.on_ground and self.is_mid_air_jump_attack: # Just landed after a jump attack
                 # Trigger AoE damage here (Game class will handle player collision)
-                self.is_stomping_jump = False
-                self.stomp_current_cooldown = self.stomp_cooldown # Reset cooldown after landing
+                self.is_mid_air_jump_attack = False # Reset flag
+                self.jump_attack_current_cooldown = self.jump_attack_cooldown # Reset cooldown
+                self.state = "IDLE" # Return to idle
+                self.last_attack_type = "JUMP_ATTACK"
+                print("King Slime Jump Attack landed!")
 
-        if self.stomp_current_cooldown > 0:
-            self.stomp_current_cooldown -= 1
+        elif self.state == "SUMMON_MINIONS":
+            if self.on_ground:
+                if self.minions_spawned_callback:
+                    # Pass the boss's position to spawn minions near it
+                    self.minions_spawned_callback(self.rect.centerx, self.rect.bottom - 20, self.num_minions_to_summon)
+                self.summon_minions_current_cooldown = self.summon_minions_cooldown # Reset cooldown
+                self.state = "IDLE" # Return to idle
+                self.last_attack_type = "SUMMON_MINIONS"
+                print(f"King Slime summoned {self.num_minions_to_summon} minions!")
 
-        if self.stomp_current_cooldown <= 0 and self.on_ground and not self.is_stomping_jump:
-            # Initiate stomp jump
-            self.vel_y = self.stomp_jump_strength
-            self.on_ground = False
-            self.is_stomping_jump = True
-            self.vel_x = 0 # Stop horizontal movement during stomp jump
-            print("King Slime initiating stomp jump!")
+        # Visual feedback for invincibility (flashing)
+        if self.invincible and self.invincibility_timer % 10 < 5:
+            self.image.set_alpha(128)
+        else:
+            self.image.set_alpha(255)
+
+        # For KingSlime, override default patrol to be more stationary or target player
+        # For now, it will simply stay still if not doing a special attack.
+        # More advanced AI for movement can be added later.
+        if self.on_ground and self.state == "IDLE":
+            self.vel_x = 0 # KingSlime mostly stationary when idle
+            # If we want it to move, we can re-enable patrol or add player-tracking
+            # super().update(platforms) would re-enable basic patrol
+            
+        # Ensure it doesn't move when in air for jump attack
+        if self.is_mid_air_jump_attack:
+            self.vel_x = 0
+
+    def take_damage(self, damage):
+        if self.state == "DEFEATED":
+            return # Cannot take damage if defeated
+
+        if not self.invincible:
+            self.hp -= damage
+            print(f"KingSlime took {damage} damage. HP: {self.hp}")
+            self.start_invincibility()
+            if self.hp <= 0:
+                self.state = "DEFEATED"
+                print("King Slime defeated!")
+
+    def reset_boss_state(self):
+        """Resets boss HP, state, and cooldowns. Call when player leaves arena mid-fight."""
+        self.hp = self.max_hp
+        self.state = "IDLE"
+        self.vel_x = 0
+        self.vel_y = 0
+        self.is_mid_air_jump_attack = False
+        self.jump_attack_current_cooldown = random.randint(60, self.jump_attack_cooldown)
+        self.summon_minions_current_cooldown = random.randint(120, self.summon_minions_cooldown)
+        self.invincible = False
+        self.invincibility_timer = 0
+        print("King Slime state reset.")
+
