@@ -29,6 +29,9 @@ class Player:
         self.attackRange_base_height = 30
         self.attackRange_rect = pygame.Rect(0, 0, self.attackRange_base_width, self.attackRange_base_height)
 
+        # Quest-related attributes
+        self.active_quests = []
+
 
     def update(self):
         # Apply gravity
@@ -107,3 +110,25 @@ class Player:
             attack_rect = self.get_attack_rect()
             if attack_rect:
                 pygame.draw.rect(screen, (255, 0, 0), attack_rect, 2) # Red outline for attack hitbox
+
+    # --- Quest Methods ---
+    def accept_quest(self, quest):
+        if not any(q.quest_id == quest.quest_id for q in self.active_quests):
+            quest.is_active = True
+            self.active_quests.append(quest)
+            print(f"Player accepted quest: {quest.title}")
+
+    def update_quest_progress(self, event_type, data):
+        for quest in self.active_quests:
+            quest.update_progress(event_type, data)
+
+    def claim_quest_reward(self, quest_to_claim):
+        # Find the quest in active_quests to ensure it's the player's actual quest object
+        for quest in self.active_quests:
+            if quest.quest_id == quest_to_claim.quest_id and quest.is_completed and not quest.is_reward_claimed:
+                self.gain_exp(quest.reward_exp)
+                quest.is_reward_claimed = True
+                print(f"Player claimed {quest.reward_exp} EXP for quest '{quest.title}'")
+                # Optionally remove claimed quests or move to a 'completed_quests' list
+                # For now, we'll keep it in active_quests but marked as claimed
+                return # Reward claimed, exit loop
