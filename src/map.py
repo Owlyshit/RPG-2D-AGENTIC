@@ -33,7 +33,8 @@ class Map:
         self.height = height
         self.platforms = []
         self.portals = []
-        self.enemies = [] # Will add enemies directly to map for simplicity in this stage
+        self.enemies = []
+        self.npcs = [] # New list for NPCs
         self.spawn_point_x = spawn_x
         self.spawn_point_y = spawn_y
         self.background_color = (135, 206, 235) # Sky blue
@@ -49,10 +50,13 @@ class Map:
     def add_enemy(self, enemy):
         self.enemies.append(enemy)
 
+    def add_npc(self, npc): # New method to add NPCs
+        self.npcs.append(npc)
+
     def draw(self, screen):
         screen.fill(self.background_color)
         for platform in self.platforms:
             platform.draw(screen)
         for portal in self.portals:
             portal.draw(screen)
-        # Enemies are drawn by the Game class after map drawing
+        # Enemies and NPCs are drawn by the Game class after map drawing
