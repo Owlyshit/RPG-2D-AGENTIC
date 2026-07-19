@@ -1,5 +1,6 @@
 import pygame
 from src.skill import Fireball # Import Fireball
+from src.item import HealthPotion, ManaPotion # Import potion items
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height, walk_speed, jump_strength, gravity):
@@ -61,6 +62,15 @@ class Player(pygame.sprite.Sprite):
         # Quest tracking
         self.active_quests = {}
 
+        # Inventory and Consumables
+        self.inventory = {
+            "health_potion": 5,
+            "mana_potion": 3,
+        } # item_id: quantity
+        self.POTION_MAX_STACK = 99
+        self.potion_cooldown_timer = 0
+        self.POTION_COOLDOWN_DURATION = 60 # frames (1 second)
+
 
     def handle_input(self, event):
         if event.type == pygame.KEYDOWN:
@@ -77,6 +87,10 @@ class Player(pygame.sprite.Sprite):
                 return self.cast_fireball() # Return fireball if cast successfully
             if event.key == pygame.K_LSHIFT and self.dash_current_cooldown <= 0:
                 self.start_dash()
+            if event.key == pygame.K_1: # Use Health Potion
+                return self.use_health_potion()
+            if event.key == pygame.K_2: # Use Mana Potion
+                return self.use_mana_potion()
         return None # No fireball cast or no relevant key pressed
 
     def jump(self):
@@ -219,14 +233,20 @@ class Player(pygame.sprite.Sprite):
             if self.invincibility_timer <= 0:
                 self.invincible = False
                 self.image.set_alpha(255) # Make player fully visible
+        
+        # Update potion cooldown
+        if self.potion_cooldown_timer > 0:
+            self.potion_cooldown_timer -= 1
 
-        # Ensure HP does not go below 0
+        # Ensure HP does not go below 0 or above max
         if self.hp < 0:
             self.hp = 0
+        elif self.hp > self.max_hp:
+            self.hp = self.max_hp
         # Ensure MP does not go below 0 or above max
         if self.mp < 0:
             self.mp = 0
-        if self.mp > self.max_mp:
+        elif self.mp > self.max_mp:
             self.mp = self.max_mp
 
     def take_damage(self, damage):
@@ -304,6 +324,56 @@ class Player(pygame.sprite.Sprite):
             return True
         return False
 
+    def add_item(self, item_instance, quantity=1):
+        item_id = item_instance.item_id
+        current_quantity = self.inventory.get(item_id, 0)
+        if current_quantity >= item_instance.stack_limit:
+            print(f"Inventory for {item_instance.name} is full!")
+            return False # Cannot add, stack is full
+        
+        # Add item, respecting stack limit
+        can_add = min(quantity, item_instance.stack_limit - current_quantity)
+        if can_add > 0:
+            self.inventory[item_id] = current_quantity + can_add
+            print(f"Added {can_add} {item_instance.name}(s). Current: {self.inventory[item_id]}")
+            return True
+        return False
+
+    def use_health_potion(self):
+        if self.potion_cooldown_timer > 0:
+            return "Potion on cooldown!"
+        
+        hp_potion_id = HealthPotion().item_id
+        if self.inventory.get(hp_potion_id, 0) <= 0:
+            return "No Health Potions!"
+        
+        if self.hp == self.max_hp:
+            return "HP is already full!"
+
+        # Use potion
+        restore_amount = HealthPotion().restore_hp_amount
+        self.hp = min(self.max_hp, self.hp + restore_amount)
+        self.inventory[hp_potion_id] -= 1
+        self.potion_cooldown_timer = self.POTION_COOLDOWN_DURATION
+        return f"Used Health Potion! HP: {self.hp}/{self.max_hp}"
+
+    def use_mana_potion(self):
+        if self.potion_cooldown_timer > 0:
+            return "Potion on cooldown!"
+
+        mp_potion_id = ManaPotion().item_id
+        if self.inventory.get(mp_potion_id, 0) <= 0:
+            return "No Mana Potions!"
+
+        if self.mp == self.max_mp:
+            return "MP is already full!"
+
+        # Use potion
+        restore_amount = ManaPotion().restore_mp_amount
+        self.mp = min(self.max_mp, self.mp + restore_amount)
+        self.inventory[mp_potion_id] -= 1
+        self.potion_cooldown_timer = self.POTION_COOLDOWN_DURATION
+        return f"Used Mana Potion! MP: {self.mp}/{self.max_mp}"
 
     def draw(self, screen):
         # Determine player color
