@@ -1,10 +1,12 @@
 import pygame
 import sys
+import random # Added for potion drops
 from src.player import Player
 from src.enemy import Slime, KingSlime, MiniSlime # Import MiniSlime
 from src.map import Platform, Portal, GameMap
 from src.npc import NPC, Quest
 from src.skill import Fireball # Import Fireball
+from src.item import HealthPotion, ManaPotion # Import potion items
 
 # Simple data class for spawn points
 class SpawnPoint:
@@ -47,6 +49,11 @@ class Game:
         self.enemy_spawn_points = [] # List to manage enemy respawns
         self.boss_instance = None # To hold a reference to the KingSlime boss
 
+        # Game state for notifications
+        self.notification_message = ""
+        self.notification_timer = 0 # frames
+        self.NOTIFICATION_DURATION = 120 # frames (2 seconds)
+
         # Load Sounds (Placeholder - replace with actual paths)
         try:
             self.jump_sound = pygame.mixer.Sound('assets/sounds/jump.wav')
@@ -78,6 +85,11 @@ class Game:
         except pygame.error:
             print("Warning: enemy_death.wav not found. Playing dummy sound.")
             self.enemy_death_sound = DummySound()
+        try:
+            self.potion_sound = pygame.mixer.Sound('assets/sounds/potion.wav') # New potion sound
+        except pygame.error:
+            print("Warning: potion.wav not found. Playing dummy sound.")
+            self.potion_sound = DummySound()
         
         # Set sound volumes (optional, default is 1.0)
         # self.jump_sound.set_volume(0.5)
@@ -104,6 +116,7 @@ class Game:
         self.TEXT_COLOR = (255, 255, 255)
         self.BAR_BACKGROUND_COLOR = (50, 50, 50)
         self.DIALOGUE_BG_COLOR = (0, 0, 0, 180)
+        self.NOTIFICATION_COLOR = (255, 255, 255)
 
         self.HUD_X = 10
         self.HUD_Y = 10
@@ -232,31 +245,34 @@ class Game:
         self.game_map = GameMap(self.platforms.sprites(), self.enemies.sprites(), self.portals.sprites())
 
 
+    def display_notification(self, message, duration=120):
+        self.notification_message = message
+        self.notification_timer = duration
+        print(f"Notification: {message}") # Also print to console for debugging
+
+
     def handle_input(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
             
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    if self.player.on_ground:
-                        self.player.jump()
-                        self.jump_sound.play() # Play jump sound
-                    elif self.player.can_double_jump:
-                        self.player.jump()
-                        self.player.can_double_jump = False
-                        self.jump_sound.play() # Play jump sound (for double jump)
-                elif event.key == pygame.K_j and not self.player.is_attacking and self.player.attack_cooldown <= 0:
-                    self.player.start_attack()
-                    self.melee_sound.play() # Play melee sound
-                elif event.key == pygame.K_k: # Cast Fireball
-                    new_fireball = self.player.cast_fireball()
-                    if new_fireball:
-                        self.projectiles.add(new_fireball)
-                        self.all_sprites.add(new_fireball)
-                        self.magic_sound.play() # Play magic sound
-                elif event.key == pygame.K_e:
-                    if self.dialogue_active and self.current_npc:
+                # Potion usage should not be blocked by dialogue
+                if event.key == pygame.K_1: # Use Health Potion
+                    message = self.player.use_health_potion()
+                    self.display_notification(message)
+                    if "Used" in message: # Check if potion was successfully used
+                        self.potion_sound.play()
+                    continue # Process next event or skip other keydowns
+                if event.key == pygame.K_2: # Use Mana Potion
+                    message = self.player.use_mana_potion()
+                    self.display_notification(message)
+                    if "Used" in message: # Check if potion was successfully used
+                        self.potion_sound.play()
+                    continue # Process next event or skip other keydowns
+
+                if self.dialogue_active and self.current_npc: # If in dialogue, only 'E' is processed for dialogue advance
+                    if event.key == pygame.K_e:
                         # Player is interacting with an NPC
                         if self.current_npc.quest_offered:
                             quest_id = self.current_npc.quest_offered.id
@@ -284,8 +300,27 @@ class Game:
                             self.current_npc.stop_talk()
                             self.dialogue_active = False
                             self.current_npc = None
-                    else:
-                        # Check for NPC interaction
+                    # No else, because if in dialogue, other keys are ignored, handled by continue from potion usage
+
+                else: # Not in dialogue
+                    if event.key == pygame.K_SPACE:
+                        if self.player.on_ground:
+                            self.player.jump()
+                            self.jump_sound.play() # Play jump sound
+                        elif self.player.can_double_jump:
+                            self.player.jump()
+                            self.player.can_double_jump = False
+                            self.jump_sound.play() # Play jump sound (for double jump)
+                    elif event.key == pygame.K_j and not self.player.is_attacking and self.player.attack_cooldown <= 0:
+                        self.player.start_attack()
+                        self.melee_sound.play() # Play melee sound
+                    elif event.key == pygame.K_k: # Cast Fireball
+                        new_fireball = self.player.cast_fireball()
+                        if new_fireball:
+                            self.projectiles.add(new_fireball)
+                            self.all_sprites.add(new_fireball)
+                            self.magic_sound.play() # Play magic sound
+                    elif event.key == pygame.K_e: # Check for NPC interaction
                         for npc in self.npcs:
                             if self.player.rect.colliderect(npc.rect.inflate(50, 50)): # Slightly larger interaction area
                                 self.current_npc = npc
@@ -296,21 +331,32 @@ class Game:
                                 break
                         else: # No NPC found, pass input to player
                             self.player.handle_input(event) # This will handle other player movements outside of dialogue
-                else: # Any other key press during dialogue should just advance/close (for now)
-                    if self.dialogue_active:
-                         self.current_npc.stop_talk()
-                         self.dialogue_active = False
-                         self.current_npc = None
                     else:
-                         self.player.handle_input(event)
+                        self.player.handle_input(event)
             else: # If not KEYDOWN, pass other events directly to player for continuous movement
-                self.player.handle_input(event)
+                # Ensure player.handle_input doesn't get potion keys if already handled above
+                if event.type == pygame.KEYUP and (event.key == pygame.K_1 or event.key == pygame.K_2): # Ignore key-up for potions
+                    pass
+                else:
+                    self.player.handle_input(event)
 
 
     def update(self):
+        # Always update player's cooldowns and state, even during dialogue
+        # self.player.update(self.platforms.sprites()) is already called in the !dialogue_active block
+        # But potion cooldown needs to update always
+        if self.player.potion_cooldown_timer > 0:
+            self.player.potion_cooldown_timer -= 1
+
         if not self.dialogue_active: # Only update game elements if not talking to NPC
             self.all_sprites.update(self.platforms.sprites()) # Pass platforms for collision
             self.projectiles.update(self.platforms.sprites()) # Update projectiles
+
+            # Update notification timer
+            if self.notification_timer > 0:
+                self.notification_timer -= 1
+            else:
+                self.notification_message = ""
 
             # Handle enemy respawn logic
             for sp in self.enemy_spawn_points:
@@ -367,7 +413,8 @@ class Game:
 
             # Projectile-enemy collision
             for projectile in self.projectiles:
-                collided_enemies = pygame.sprite.spritecollide(projectile, self.enemies, False):
+                collided_enemies = pygame.sprite.spritecollide(projectile, self.enemies, False)
+                for enemy in collided_enemies:
                     if not enemy.invincible:
                         enemy.take_damage(projectile.damage)
                         self.enemy_hit_sound.play() # Play enemy hit sound
@@ -377,6 +424,9 @@ class Game:
                         if enemy.hp <= 0:
                             self.player.gain_exp(enemy.exp_reward)
                             self.player.increment_quest_kill_count(type(enemy).__name__) # type(enemy).__name__ gives 'Slime' or 'KingSlime' or 'MiniSlime'
+                            # Potion drop logic
+                            self._handle_enemy_drop(enemy.rect.centerx, enemy.rect.centery, enemy)
+
                             # If the defeated enemy is the KingSlime, also check for a unique item drop (placeholder)
                             if isinstance(enemy, KingSlime):
                                 print("King Slime defeated! Unique item drop (placeholder).")
@@ -410,6 +460,9 @@ class Game:
                             if enemy.hp <= 0:
                                 self.player.gain_exp(enemy.exp_reward)
                                 self.player.increment_quest_kill_count(type(enemy).__name__) # type(enemy).__name__ gives 'Slime' or 'KingSlime' or 'MiniSlime'
+                                # Potion drop logic
+                                self._handle_enemy_drop(enemy.rect.centerx, enemy.rect.centery, enemy)
+
                                 # If the defeated enemy is the KingSlime, also check for a unique item drop (placeholder)
                                 if isinstance(enemy, KingSlime):
                                     print("King Slime defeated! Unique item drop (placeholder).")
@@ -441,6 +494,29 @@ class Game:
                 self.player.rect.left = 0
             if self.player.rect.right > self.screen_width:
                 self.player.rect.right = self.screen_width
+
+    def _handle_enemy_drop(self, x, y, enemy):
+        drop_chance = random.random() # 0.0 to 1.0
+        dropped_item = None
+
+        if isinstance(enemy, Slime) or isinstance(enemy, MiniSlime):
+            if drop_chance < 0.2: # 20% chance for a potion
+                if random.random() < 0.6: # 60% of time it's HP potion
+                    dropped_item = HealthPotion()
+                else: # 40% of time it's MP potion
+                    dropped_item = ManaPotion()
+        elif isinstance(enemy, KingSlime):
+            if drop_chance < 0.5: # 50% chance for KingSlime to drop a potion
+                if random.random() < 0.7: # Higher chance for HP potion from boss
+                    dropped_item = HealthPotion()
+                else:
+                    dropped_item = ManaPotion()
+
+        if dropped_item:
+            if self.player.add_item(dropped_item, 1): # Try to add 1 of the dropped item
+                self.display_notification(f"Picked up {dropped_item.name}!")
+            else:
+                self.display_notification(f"Inventory for {dropped_item.name} is full!")
 
 
     def draw_hud(self):
@@ -478,6 +554,22 @@ class Game:
         level_text = self.font.render(f"Level: {self.player.level}", True, self.TEXT_COLOR)
         self.screen.blit(level_text, (self.HUD_X + self.LEVEL_OFFSET_X, self.HUD_Y + (self.BAR_HEIGHT + self.BAR_SPACING) * 3))
 
+        # Potion quantities (below other HUD elements, or to the right)
+        potion_hud_y = self.HUD_Y + (self.BAR_HEIGHT + self.BAR_SPACING) * 4
+        hp_potion_count = self.player.inventory.get(HealthPotion().item_id, 0)
+        mp_potion_count = self.player.inventory.get(ManaPotion().item_id, 0)
+
+        hp_potion_text = self.font.render(f"HP Potions (1): {hp_potion_count}", True, self.TEXT_COLOR)
+        self.screen.blit(hp_potion_text, (self.HUD_X, potion_hud_y))
+        mp_potion_text = self.font.render(f"MP Potions (2): {mp_potion_count}", True, self.TEXT_COLOR)
+        self.screen.blit(mp_potion_text, (self.HUD_X, potion_hud_y + self.BAR_HEIGHT + self.BAR_SPACING))
+
+        # Potion Cooldown Display
+        if self.player.potion_cooldown_timer > 0:
+            cooldown_seconds = self.player.potion_cooldown_timer / 60
+            cooldown_text = self.font.render(f"Potion CD: {cooldown_seconds:.1f}s", True, (255, 100, 100)) # Reddish color for cooldown
+            self.screen.blit(cooldown_text, (self.HUD_X + self.BAR_WIDTH + 20, potion_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 0.5))
+
 
     def draw_dialogue_box(self, text):
         # Draw semi-transparent background
@@ -506,9 +598,18 @@ class Game:
 
         if self.dialogue_active and self.current_npc:
             self.draw_dialogue_box(self.current_npc.current_dialogue)
+        
+        # Draw global notifications
+        if self.notification_timer > 0:
+            self.draw_notification(self.notification_message)
 
 
         pygame.display.flip()
+
+    def draw_notification(self, message):
+        text_surface = self.font.render(message, True, self.NOTIFICATION_COLOR)
+        text_rect = text_surface.get_rect(center=(self.screen_width // 2, self.screen_height // 4))
+        self.screen.blit(text_surface, text_rect)
 
     def run(self):
         while self.running:
