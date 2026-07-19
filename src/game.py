@@ -3,6 +3,8 @@ import sys
 from src.player import Player
 from src.enemy import Slime
 from src.map import Platform, Portal, Map
+from src.npc import NPC # New import
+from src.quest import Quest # New import
 
 class Game:
     def __init__(self):
@@ -22,6 +24,16 @@ class Game:
         self._teleport_player(self.current_map.spawn_point_x, self.current_map.spawn_point_y)
 
     def _create_sample_maps(self):
+        # Quest Definition
+        slime_quest = Quest(
+            quest_id="slime_hunt_1",
+            title="Slime Hunter",
+            description="Defeat 5 mischievous slimes for the villager.",
+            objective_type="DEFEAT_ENEMY",
+            target_data={'enemy_type': 'Slime', 'count': 5},
+            reward_exp=50
+        )
+
         # Map 1
         map1 = Map(1, self.screen_width, self.screen_height, spawn_x=100, spawn_y=400)
         # Ground
@@ -34,7 +46,13 @@ class Game:
         # Slime on map 1
         map1.add_enemy(Slime(300, self.screen_height - 82, 250, 400))
         map1.add_enemy(Slime(650, self.screen_height - 82, 600, 750))
+        map1.add_enemy(Slime(100, self.screen_height - 82, 50, 150))
+        map1.add_enemy(Slime(400, self.screen_height - 82, 350, 450))
+        map1.add_enemy(Slime(500, 118, 480, 580)) # Slime on a higher platform
 
+        # NPC on map 1
+        map1.add_npc(NPC(50, self.screen_height - 98, "Villager", slime_quest)) # New NPC
+        
         # Portal to Map 2
         map1.add_portal(Portal(700, self.screen_height - 150, 50, 100, 2, 50, 400))
         self.maps[1] = map1
@@ -161,6 +179,9 @@ class Game:
                         exp_gained = enemy.take_damage(self.player.attackPower)
                         if exp_gained > 0:
                             self.player.gain_exp(exp_gained)
+                            # Update quest progress when enemy is defeated
+                            # Assuming 'Slime' for enemy_type for now. This could be made dynamic.
+                            self.player.update_quest_progress('ENEMY_DEFEATED', {'enemy_type': 'Slime'})
                         enemy.last_hit_by_player_attack_id = attack_id # Mark as hit by this attack
 
     def _handle_portal_collision(self):
@@ -187,22 +208,44 @@ class Game:
 
     def run(self):
         while self.running:
+            # Handle user input (key held down)
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_a]:
+                self.player.move_left()
+            if keys[pygame.K_d]:
+                self.player.move_right()
+
+            # Handle single key press events
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_a:
-                        self.player.move_left()
-                    if event.key == pygame.K_d:
-                        self.player.move_right()
                     if event.key == pygame.K_SPACE:
                         self.player.jump()
                     if event.key == pygame.K_j: # Attack key
                         self.player.attack()
+                    if event.key == pygame.K_e: # Interact key
+                        # Check for NPC interaction
+                        for npc in self.current_map.npcs:
+                            if self.player.rect.colliderect(npc.rect.inflate(50, 50)): # Inflate for easier interaction
+                                npc.interact(self.player)
+                                break # Interact with only one NPC at a time
 
-            # --- Update --- 
-            # Apply gravity and update internal state
+
+            # --- Update ---
+            # Player update (gravity, attack timer, movement applied)
             self.player.update()
+            
+            # NPC update (dialogue state)
+            for npc in self.current_map.npcs:
+                npc.update(self.player)
+                # Check if player is near NPC for interaction prompt
+                if self.player.rect.colliderect(npc.rect.inflate(50, 50)): # Inflate for easier interaction
+                    npc.show_prompt = True
+                else:
+                    npc.show_prompt = False
+
+
             for enemy in self.current_map.enemies:
                 enemy.update()
             
@@ -231,6 +274,9 @@ class Game:
             self.player.draw(self.screen)
             for enemy in self.current_map.enemies:
                 enemy.draw(self.screen)
+            for npc in self.current_map.npcs: # Draw NPCs
+                npc.draw(self.screen)
+
 
             # Display player HP/EXP (simple text)
             font = pygame.font.Font(None, 24)
@@ -240,6 +286,23 @@ class Game:
             self.screen.blit(hp_text, (5, 5))
             self.screen.blit(exp_text, (5, 30))
             self.screen.blit(map_text, (self.screen_width - map_text.get_width() - 5, 5))
+
+            # Display active quests
+            y_offset = 60
+            for quest in self.player.active_quests:
+                quest_title = quest.title
+                if quest.is_completed and not quest.is_reward_claimed:
+                    quest_status = "(Completed - Claim Reward!)"
+                elif quest.is_completed and quest.is_reward_claimed:
+                    quest_status = "(Claimed)"
+                elif quest.is_active:
+                    quest_status = f"({quest.get_progress_string()})"
+                else:
+                    quest_status = "(Inactive)"
+
+                quest_text = font.render(f"{quest_title}: {quest_status}", True, (0, 0, 0))
+                self.screen.blit(quest_text, (5, y_offset))
+                y_offset += 25
 
 
             pygame.display.flip()
