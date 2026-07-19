@@ -1,88 +1,92 @@
 import pygame
 
-class Slime:
-    def __init__(self, x, y, patrol_start_x, patrol_end_x):
-        self.initial_x = x
-        self.initial_y = y
-        self.width = 32
-        self.height = 32
-        self.rect = pygame.Rect(x, y, self.width, self.height)
-        self.color = (0, 200, 0) # Green
+class Slime(pygame.sprite.Sprite):
+    def __init__(self, x, y, patrol_range, walk_speed, gravity):
+        super().__init__()
+        self.image = pygame.Surface((32, 32))
+        self.image.fill((0, 0, 255)) # Blue slime
+        self.rect = self.image.get_rect(topleft=(x, y))
 
-        self.hp = 30
-        self.maxHp = 30
-        self.contactDamage = 5
-        self.expReward = 10
+        self.vel_x = walk_speed
+        self.vel_y = 0
+        self.walk_speed = walk_speed
+        self.gravity = gravity
+        self.on_ground = False
+        self.facing_right = True
 
-        self.patrolStart_x = patrol_start_x
-        self.patrolEnd_x = patrol_end_x
-        self.walkSpeed = 2
-        self.currentDirection = 1 # 1 for right, -1 for left
+        self.start_x = x
+        self.patrol_range = patrol_range # Distance to patrol left/right from start_x
 
-        self.gravity = 0.5
-        self.dy = 0 # Vertical velocity
+        self.hp = 50
+        self.max_hp = 50
+        self.contact_damage = 10
+        self.exp_reward = 10
 
-        self.is_active = True
-        self.isGrounded = False # Similar to player, for gravity application
-        self.respawnTimer = 0
-        self.respawnCooldown = 300 # frames (e.g., 5 seconds at 60 FPS)
-        self.last_hit_by_player_attack_id = None # To prevent multiple EXP for one attack
+        self.invincible = False
+        self.invincibility_timer = 0
+        self.INVINCIBILITY_DURATION = 30 # frames
 
-    def update(self):
-        if self.is_active:
-            # Apply gravity
-            if not self.isGrounded:
-                self.dy += self.gravity
-                if self.dy > 10: # Cap falling speed
-                    self.dy = 10
+    def update(self, platforms):
+        # Apply gravity
+        self.vel_y += self.gravity
+        if self.vel_y > 10:  # Terminal velocity
+            self.vel_y = 10
 
-            # Patrol movement
-            # Store original x for collision resolution
-            original_x = self.rect.x
-            self.rect.x += self.walkSpeed * self.currentDirection
+        # Update position
+        self.rect.x += self.vel_x
+        self.rect.y += self.vel_y
 
-            # Check patrol boundaries
-            if self.currentDirection == 1 and self.rect.right > self.patrolEnd_x:
-                self.currentDirection = -1
-            elif self.currentDirection == -1 and self.rect.left < self.patrolStart_x:
-                self.currentDirection = 1
+        # Collision detection with platforms
+        self.on_ground = False
+        for platform in platforms:
+            if self.rect.colliderect(platform.rect):
+                # Slimes should treat all platforms as solid for simplicity
+                if self.vel_y > 0 and self.rect.bottom - self.vel_y <= platform.rect.top: # Falling and hit top
+                    self.rect.bottom = platform.rect.top
+                    self.vel_y = 0
+                    self.on_ground = True
+                elif self.vel_y < 0 and self.rect.top - self.vel_y >= platform.rect.bottom: # Jumping and hit bottom
+                    self.rect.top = platform.rect.bottom
+                    self.vel_y = 0
+                elif self.vel_x > 0 and self.rect.right - self.vel_x <= platform.rect.left: # Moving right and hit left side
+                    self.rect.right = platform.rect.left
+                    self.vel_x = -self.vel_x # Turn around
+                elif self.vel_x < 0 and self.rect.left - self.vel_x >= platform.rect.right: # Moving left and hit right side
+                    self.rect.left = platform.rect.right
+                    self.vel_x = -self.vel_x # Turn around
 
-            # Vertical movement is applied, collision with platforms will adjust dy and isGrounded
-            self.rect.y += self.dy
+        # Patrolling logic
+        if self.on_ground:
+            if self.vel_x > 0 and self.rect.x > self.start_x + self.patrol_range:
+                self.vel_x = -self.walk_speed
+                self.facing_right = False
+            elif self.vel_x < 0 and self.rect.x < self.start_x - self.patrol_range:
+                self.vel_x = self.walk_speed
+                self.facing_right = True
 
-        else: # If not active (defeated)
-            self.respawnTimer -= 1
-            if self.respawnTimer <= 0:
-                self.respawn()
+        # Update invincibility
+        if self.invincible:
+            self.invincibility_timer -= 1
+            if self.invincibility_timer <= 0:
+                self.invincible = False
+                self.image.set_alpha(255) # Make enemy fully visible
+
+        # Ensure HP does not go below 0
+        if self.hp < 0:
+            self.hp = 0
+
 
     def take_damage(self, damage):
-        if self.is_active:
+        if not self.invincible:
             self.hp -= damage
-            # print(f"Slime took {damage} damage. HP: {self.hp}") # For debugging
-            if self.hp <= 0:
-                self.die()
-                return self.expReward # Return EXP reward if defeated
-        return 0
+            print(f"Slime took {damage} damage. HP: {self.hp}")
+            self.start_invincibility()
 
-    def die(self):
-        self.is_active = False
-        self.respawnTimer = self.respawnCooldown
-        # Move off-screen or make non-collidable
-        self.rect.x = -1000 # Off-screen
-        self.rect.y = -1000
-        # print("Slime defeated!") # For debugging
+    def start_invincibility(self):
+        self.invincible = True
+        self.invincibility_timer = self.INVINCIBILITY_DURATION
+        self.image.set_alpha(128) # Visual cue for invincibility
 
-    def respawn(self):
-        self.is_active = True
-        self.hp = self.maxHp
-        self.rect.x = self.initial_x
-        self.rect.y = self.initial_y
-        self.currentDirection = 1 # Reset direction
-        self.dy = 0 # Reset vertical velocity
-        self.isGrounded = False # Ensure gravity applies on respawn
-        self.last_hit_by_player_attack_id = None # Reset for new life
-        # print("Slime respawned!") # For debugging
-
-    def draw(self, screen):
-        if self.is_active:
-            pygame.draw.rect(screen, self.color, self.rect)
+    def apply_knockback(self, direction, strength):
+        self.vel_x = direction * strength * 0.5 # Slimes move slower with knockback
+        self.vel_y = -strength / 3 # Minor vertical knockback
