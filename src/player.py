@@ -1,134 +1,161 @@
 import pygame
 
-class Player:
-    def __init__(self, x, y):
-        self.width = 32
-        self.height = 48
-        self.rect = pygame.Rect(x, y, self.width, self.height)
-        self.color = (0, 128, 255) # Blue
+class Player(pygame.sprite.Sprite):
+    def __init__(self, x, y, width, height, walk_speed, jump_strength, gravity):
+        super().__init__()
+        self.image = pygame.Surface((width, height))
+        self.image.fill((255, 0, 0))  # Red player
+        self.rect = self.image.get_rect(topleft=(x, y))
+
+        self.vel_x = 0
+        self.vel_y = 0
+        self.walk_speed = walk_speed
+        self.jump_strength = jump_strength
+        self.gravity = gravity
+        self.on_ground = False
+        self.facing_right = True
 
         self.hp = 100
-        self.maxHp = 100
-        self.attackPower = 10
+        self.max_hp = 100
+        self.mp = 50  # Added MP
+        self.max_mp = 50 # Added Max MP
+        self.attack_damage = 20
         self.exp = 0
         self.level = 1
+        self.exp_to_next_level = 100 # Initial EXP to next level
 
-        self.walkSpeed = 5
-        self.jumpStrength = -12  # Negative for upward movement
-        self.gravity = 0.5
-        self.dy = 0
-        self.dx = 0 # Will be reset each frame, controlled by input
+        self.is_attacking = False
+        self.attack_cooldown = 0
+        self.ATTACK_COOLDOWN_TIME = 30 # frames
+        self.attack_hitbox = pygame.Rect(0, 0, 0, 0) # Placeholder, will be updated during attack
 
-        self.isGrounded = False
-        self.facingDirection = 1 # 1 for right, -1 for left
+        self.invincible = False
+        self.invincibility_timer = 0
+        self.INVINCIBILITY_DURATION = 60 # frames
 
-        self.isAttacking = False
-        self.attackCooldown = 30 # frames (e.g., 0.5 seconds at 60 FPS)
-        self.attackTimer = 0
-        self.attackRange_base_width = 40
-        self.attackRange_base_height = 30
-        self.attackRange_rect = pygame.Rect(0, 0, self.attackRange_base_width, self.attackRange_base_height)
-
-        # Quest-related attributes
-        self.active_quests = []
-
-
-    def update(self):
-        # Apply gravity
-        if not self.isGrounded:
-            self.dy += self.gravity
-            if self.dy > 10: # Cap falling speed
-                self.dy = 10
-
-        # Update attack timer
-        if self.isAttacking:
-            self.attackTimer -= 1
-            if self.attackTimer <= 0:
-                self.isAttacking = False
-
-        # Apply movement
-        self.rect.x += self.dx
-        self.rect.y += self.dy
-
-        # Reset horizontal movement for next frame unless input is constant
-        self.dx = 0
-
-    def move_left(self):
-        self.dx = -self.walkSpeed
-        self.facingDirection = -1
-
-    def move_right(self):
-        self.dx = self.walkSpeed
-        self.facingDirection = 1
+    def handle_input(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE and self.on_ground:
+                self.jump()
+            if event.key == pygame.K_j and not self.is_attacking and self.attack_cooldown <= 0:
+                self.start_attack()
 
     def jump(self):
-        if self.isGrounded:
-            self.dy = self.jumpStrength
-            self.isGrounded = False
+        self.vel_y = self.jump_strength
+        self.on_ground = False
 
-    def attack(self):
-        # Only allow attack if not already attacking and cooldown is over
-        if not self.isAttacking and self.attackTimer <= 0:
-            self.isAttacking = True
-            self.attackTimer = self.attackCooldown # Attack lasts for 'attackCooldown' frames
+    def start_attack(self):
+        self.is_attacking = True
+        self.attack_cooldown = self.ATTACK_COOLDOWN_TIME
+        # Define attack hitbox relative to player
+        if self.facing_right:
+            self.attack_hitbox = pygame.Rect(self.rect.right, self.rect.centery - 10, 30, 20)
+        else:
+            self.attack_hitbox = pygame.Rect(self.rect.left - 30, self.rect.centery - 10, 30, 20)
 
+    def update(self, platforms):
+        # Handle horizontal movement
+        keys = pygame.key.get_pressed()
+        self.vel_x = 0
+        if not self.is_attacking: # Cannot move while attacking (simple version)
+            if keys[pygame.K_a]:
+                self.vel_x = -self.walk_speed
+                self.facing_right = False
+            if keys[pygame.K_d]:
+                self.vel_x = self.walk_speed
+                self.facing_right = True
 
-    def get_attack_rect(self):
-        if self.isAttacking:
-            # Position the attack rect relative to player and facing direction
-            if self.facingDirection == 1: # Facing right
-                # Attack rect origin is player's right side, centered vertically
-                self.attackRange_rect.topleft = (self.rect.right, self.rect.centery - self.attackRange_base_height // 2)
-            else: # Facing left
-                # Attack rect origin is player's left side, centered vertically
-                self.attackRange_rect.topright = (self.rect.left, self.rect.centery - self.attackRange_base_height // 2)
-            return self.attackRange_rect
-        return None
+        # Apply gravity
+        self.vel_y += self.gravity
+        if self.vel_y > 10:  # Terminal velocity
+            self.vel_y = 10
 
-    def take_damage(self, damage):
-        self.hp -= damage
+        # Update position
+        self.rect.x += self.vel_x
+        self.rect.y += self.vel_y
+
+        # Collision detection with platforms
+        self.on_ground = False
+        for platform in platforms:
+            if self.rect.colliderect(platform.rect):
+                if platform.is_one_way:
+                    # Only collide if falling onto it
+                    if self.vel_y > 0 and self.rect.bottom - self.vel_y <= platform.rect.top:
+                        self.rect.bottom = platform.rect.top
+                        self.vel_y = 0
+                        self.on_ground = True
+                else:
+                    # Solid platform collision
+                    if self.vel_y > 0 and self.rect.bottom - self.vel_y <= platform.rect.top: # Falling and hit top
+                        self.rect.bottom = platform.rect.top
+                        self.vel_y = 0
+                        self.on_ground = True
+                    elif self.vel_y < 0 and self.rect.top - self.vel_y >= platform.rect.bottom: # Jumping and hit bottom
+                        self.rect.top = platform.rect.bottom
+                        self.vel_y = 0
+                    elif self.vel_x > 0 and self.rect.right - self.vel_x <= platform.rect.left: # Moving right and hit left side
+                        self.rect.right = platform.rect.left
+                        self.vel_x = 0
+                    elif self.vel_x < 0 and self.rect.left - self.vel_x >= platform.rect.right: # Moving left and hit right side
+                        self.rect.left = platform.rect.right
+                        self.vel_x = 0
+
+        # Update attack state
+        if self.is_attacking:
+            self.attack_cooldown -= 1
+            if self.attack_cooldown <= (self.ATTACK_COOLDOWN_TIME - 15): # Attack hitbox active for a duration
+                self.attack_hitbox = pygame.Rect(0,0,0,0) # Deactivate hitbox
+            if self.attack_cooldown <= 0:
+                self.is_attacking = False
+                self.attack_cooldown = 0
+
+        # Update invincibility
+        if self.invincible:
+            self.invincibility_timer -= 1
+            if self.invincibility_timer <= 0:
+                self.invincible = False
+                self.image.set_alpha(255) # Make player fully visible
+
+        # Ensure HP does not go below 0
         if self.hp < 0:
             self.hp = 0
-        # print(f"Player took {damage} damage. HP: {self.hp}") # For debugging
+        # Ensure MP does not go below 0 or above max
+        if self.mp < 0:
+            self.mp = 0
+        if self.mp > self.max_mp:
+            self.mp = self.max_mp
 
-    def gain_exp(self, exp_amount):
-        self.exp += exp_amount
-        # Basic leveling up (can be expanded later)
-        if self.exp >= self.level * 100:
+    def take_damage(self, damage):
+        if not self.invincible:
+            self.hp -= damage
+            print(f"Player took {damage} damage. HP: {self.hp}")
+            self.start_invincibility()
+
+    def start_invincibility(self):
+        self.invincible = True
+        self.invincibility_timer = self.INVINCIBILITY_DURATION
+        self.image.set_alpha(128) # Visual cue for invincibility
+
+    def apply_knockback(self, direction, strength):
+        self.vel_x = direction * strength
+        self.vel_y = -strength / 2 # Minor vertical knockback
+
+    def gain_exp(self, amount):
+        self.exp += amount
+        # Basic level up logic (can be expanded)
+        if self.exp >= self.exp_to_next_level:
             self.level += 1
-            self.maxHp += 10
-            self.hp = self.maxHp
-            self.attackPower += 2
-            print(f"Player leveled up to {self.level}!")
-
-    def is_alive(self):
-        return self.hp > 0
+            self.exp -= self.exp_to_next_level # Carry over excess EXP
+            self.exp_to_next_level = self.level * 100 # New EXP requirement
+            self.max_hp += 10
+            self.hp = self.max_hp # Heal on level up
+            self.max_mp += 5 # Increase max MP
+            self.mp = self.max_mp # Restore MP on level up
+            self.attack_damage += 5
+            print(f"Player Leveled Up! Level: {self.level}, HP: {self.hp}/{self.max_hp}, MP: {self.mp}/{self.max_mp}, Attack: {self.attack_damage}")
 
     def draw(self, screen):
-        pygame.draw.rect(screen, self.color, self.rect)
-        if self.isAttacking:
-            attack_rect = self.get_attack_rect()
-            if attack_rect:
-                pygame.draw.rect(screen, (255, 0, 0), attack_rect, 2) # Red outline for attack hitbox
-
-    # --- Quest Methods ---
-    def accept_quest(self, quest):
-        if not any(q.quest_id == quest.quest_id for q in self.active_quests):
-            quest.is_active = True
-            self.active_quests.append(quest)
-            print(f"Player accepted quest: {quest.title}")
-
-    def update_quest_progress(self, event_type, data):
-        for quest in self.active_quests:
-            quest.update_progress(event_type, data)
-
-    def claim_quest_reward(self, quest_to_claim):
-        # Find the quest in active_quests to ensure it's the player's actual quest object
-        for quest in self.active_quests:
-            if quest.quest_id == quest_to_claim.quest_id and quest.is_completed and not quest.is_reward_claimed:
-                self.gain_exp(quest.reward_exp)
-                quest.is_reward_claimed = True
-                print(f"Player claimed {quest.reward_exp} EXP for quest '{quest.title}'")
-                # Optionally remove claimed quests or move to a 'completed_quests' list
-                # For now, we'll keep it in active_quests but marked as claimed
-                return # Reward claimed, exit loop
+        screen.blit(self.image, self.rect)
+        if self.is_attacking:
+            # For debugging, draw attack hitbox
+            pygame.draw.rect(screen, (255, 255, 0), self.attack_hitbox, 2)
