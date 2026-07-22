@@ -24,6 +24,8 @@ Controls:
 - `J`: melee attack
 - `I`: open/close inventory
 - `S`: open/close the character stat builder
+- `F5`: save character progression
+- `F9`: load character progression
 - `Q/W/E/R`: equip sword, helmet, shirt, or pants while inventory is open
 - `1/2/3/4`: spend available stat points on STR/DEX/INT/LUK while inventory is open
 

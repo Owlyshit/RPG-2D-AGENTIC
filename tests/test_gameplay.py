@@ -1,5 +1,7 @@
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
@@ -13,6 +15,7 @@ from src.game import Game
 from src.item import BronzeSword, LeatherCap, TrainingShirt, TravelerPants
 from src.player import Player
 from src.skill import IceBolt
+from src.save_manager import load_game
 
 
 class GameplayTests(unittest.TestCase):
@@ -300,6 +303,54 @@ class GameplayTests(unittest.TestCase):
         self.assertTrue(game.stats_open)
         self.assertEqual(game.player.stats["strength"], 5)
         self.assertEqual(game.player.stat_points, 0)
+
+    def test_save_and_load_round_trip_restores_progression(self):
+        with tempfile.TemporaryDirectory() as directory:
+            game = Game()
+            game.save_file = Path(directory) / "savegame.json"
+            game.player.level = 5
+            game.player.exp = 77
+            game.player.stat_points = 3
+            game.player.stats["strength"] = 12
+            game.player.inventory["health_potion"] = 17
+            game.player.equip_bronze_sword()
+            game.player.equip_starter_armor("helmet")
+            game.load_map("whispering_forest", "west_entry")
+            game.save_current_game()
+
+            game.player.level = 1
+            game.player.stats["strength"] = 4
+            game.player.inventory["health_potion"] = 0
+            game.load_map("meadow_village", "start")
+
+            self.assertTrue(game.load_saved_game())
+            self.assertEqual(game.player.level, 5)
+            self.assertEqual(game.player.exp, 77)
+            self.assertEqual(game.player.stats["strength"], 12)
+            self.assertEqual(game.player.inventory["health_potion"], 17)
+            self.assertEqual(game.player.equipped_weapon.item_id, "bronze_sword")
+            self.assertEqual(game.player.equipment["helmet"].item_id, "leather_cap")
+            self.assertEqual(game.current_map_id, "whispering_forest")
+
+    def test_corrupt_save_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "savegame.json"
+            path.write_text("not-json", encoding="utf-8")
+
+            self.assertIsNone(load_game(path))
+
+    def test_defeat_returns_player_to_village_with_exp_penalty(self):
+        game = Game()
+        game.load_map("slime_hollow", "west_entry")
+        game.player.exp = 50
+        game.player.hp = 0
+
+        game.update()
+
+        self.assertEqual(game.current_map_id, "meadow_village")
+        self.assertEqual(game.player.hp, game.player.max_hp)
+        self.assertEqual(game.player.mp, game.player.max_mp)
+        self.assertEqual(game.player.exp, 45)
 
 
 if __name__ == "__main__":

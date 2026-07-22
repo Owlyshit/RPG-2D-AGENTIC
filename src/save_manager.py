@@ -1,21 +1,30 @@
 import json
-import os
+from pathlib import Path
 
-SAVE_FILE = "high_scores.json"
 
-def load_high_scores():
-    if os.path.exists(SAVE_FILE):
-        try:
-            with open(SAVE_FILE, "r") as f:
-                data = json.load(f)
-                return data.get("high_score", 0)
-        except json.JSONDecodeError:
-            print(f"Warning: {SAVE_FILE} is corrupted. Starting with no high score.")
-            return 0
-    return 0
+SAVE_VERSION = 1
+DEFAULT_SAVE_FILE = Path("savegame.json")
 
-def save_high_scores(score):
-    data = {"high_score": score}
-    with open(SAVE_FILE, "w") as f:
-        json.dump(data, f)
-    print(f"High score saved: {score}")
+
+def save_game(state, save_file=DEFAULT_SAVE_FILE):
+    """Persist a versioned game state with an atomic file replacement."""
+    path = Path(save_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    payload = {"version": SAVE_VERSION, "state": state}
+    temporary_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temporary_path.replace(path)
+
+
+def load_game(save_file=DEFAULT_SAVE_FILE):
+    """Return a saved state, or None when the file is missing/invalid."""
+    path = Path(save_file)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if payload.get("version") != SAVE_VERSION or not isinstance(payload.get("state"), dict):
+        return None
+    return payload["state"]
