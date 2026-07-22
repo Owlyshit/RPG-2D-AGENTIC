@@ -2,14 +2,15 @@ import pygame
 import random
 
 class Slime(pygame.sprite.Sprite):
-    def __init__(self, x, y, patrol_range, walk_speed, gravity, width=32, height=32, color=(0, 0, 255), hp=50, max_hp=50, contact_damage=10, exp_reward=10):
+    def __init__(self, x, y, patrol_range, walk_speed, gravity, width=32, height=32, color=(100, 100, 255), hp=50, max_hp=50, contact_damage=10, exp_reward=10):
         super().__init__()
         self.image = pygame.Surface((width, height))
-        self.image.fill(color) # Blue slime
+        self.image.fill(color) # Light blue slime
         self.rect = self.image.get_rect(topleft=(x, y))
 
         self.vel_x = walk_speed
         self.vel_y = 0
+        self.original_walk_speed = walk_speed # Store original speed
         self.walk_speed = walk_speed
         self.gravity = gravity
         self.on_ground = False
@@ -22,12 +23,25 @@ class Slime(pygame.sprite.Sprite):
         self.max_hp = max_hp
         self.contact_damage = contact_damage
         self.exp_reward = exp_reward
+        self.name = "Slime"
 
         self.invincible = False
         self.invincibility_timer = 0
         self.INVINCIBILITY_DURATION = 30 # frames
 
+        # Slow effect attributes
+        self.is_slowed = False
+        self.slow_timer = 0
+        self.slow_percentage = 0
+        self.default_color = color # Store default color for resetting
+
     def update(self, platforms):
+        # Handle slow effect timer
+        if self.is_slowed and self.slow_timer > 0:
+            self.slow_timer -= 1
+            if self.slow_timer <= 0:
+                self.reset_speed()
+
         # Apply gravity
         self.vel_y += self.gravity
         if self.vel_y > 10:  # Terminal velocity
@@ -51,31 +65,48 @@ class Slime(pygame.sprite.Sprite):
                     self.vel_y = 0
                 elif self.vel_x > 0 and self.rect.right - self.vel_x <= platform.rect.left: # Moving right and hit left side
                     self.rect.right = platform.rect.left
-                    self.vel_x = -self.vel_x # Turn around
+                    self.vel_x = -self.walk_speed # Turn around, use current walk_speed
                 elif self.vel_x < 0 and self.rect.left - self.vel_x >= platform.rect.right: # Moving left and hit right side
                     self.rect.left = platform.rect.right
-                    self.vel_x = -self.vel_x # Turn around
+                    self.vel_x = self.walk_speed # Turn around, use current walk_speed
 
-        # Patrolling logic
-        if self.on_ground:
+        # Patrolling logic (only if not slowed or if slowed but still allowed to move)
+        if self.on_ground and not self.is_slowed: # Only patrol if not slowed
             if self.vel_x > 0 and self.rect.x > self.start_x + self.patrol_range:
                 self.vel_x = -self.walk_speed
                 self.facing_right = False
             elif self.vel_x < 0 and self.rect.x < self.start_x - self.patrol_range:
                 self.vel_x = self.walk_speed
                 self.facing_right = True
+        elif self.on_ground and self.is_slowed: # If slowed and on ground, retain current direction but with reduced speed
+            if self.vel_x > 0:
+                self.vel_x = self.walk_speed
+            elif self.vel_x < 0:
+                self.vel_x = -self.walk_speed
 
         # Update invincibility
         if self.invincible:
             self.invincibility_timer -= 1
             if self.invincibility_timer <= 0:
                 self.invincible = False
-                self.image.set_alpha(255) # Make enemy fully visible
+                # Preserve slow visual if still slowed
+                if not self.is_slowed:
+                    self.image.set_alpha(255)
+
+        # Visual feedback for slow (flashing or tint)
+        if self.is_slowed:
+            if self.slow_timer % 10 < 5: # Flashing effect
+                self.image.fill((100, 200, 255)) # Lighter blue when slowed
+            else:
+                self.image.fill(self.default_color)
+        else:
+            if not self.invincible: # Don't override invincibility flash
+                self.image.fill(self.default_color)
+
 
         # Ensure HP does not go below 0
         if self.hp < 0:
             self.hp = 0
-
 
     def take_damage(self, damage):
         if not self.invincible:
@@ -86,11 +117,31 @@ class Slime(pygame.sprite.Sprite):
     def start_invincibility(self):
         self.invincible = True
         self.invincibility_timer = self.INVINCIBILITY_DURATION
-        self.image.set_alpha(128) # Visual cue for invincibility
+        # self.image.set_alpha(128) # Visual cue for invincibility handled by main update loop
 
     def apply_knockback(self, direction, strength):
         self.vel_x = direction * strength * 0.5 # Slimes move slower with knockback
         self.vel_y = -strength / 3 # Minor vertical knockback
+
+    def apply_slow_effect(self, duration, percentage):
+        self.original_walk_speed = self.original_walk_speed or self.walk_speed # Store if not already set
+        self.is_slowed = True
+        self.slow_timer = duration
+        self.slow_percentage = percentage
+        self.walk_speed = self.original_walk_speed * (1 - self.slow_percentage) # Apply the slow
+        # Visual cue for slow is handled in update, but ensure image updates immediately
+        # self.image.fill((100, 200, 255)) # Lighter blue to show slow
+        print(f"{self.name} is slowed! Speed: {self.walk_speed}")
+
+    def reset_speed(self):
+        if self.is_slowed:
+            self.walk_speed = self.original_walk_speed
+            self.is_slowed = False
+            self.slow_timer = 0
+            self.slow_percentage = 0
+            # self.image.fill(self.default_color) # Reset visual cue handled by update
+            print(f"{self.name} speed reset to {self.walk_speed}")
+
 
 class MiniSlime(Slime):
     def __init__(self, x, y, patrol_range, walk_speed, gravity):
@@ -108,6 +159,7 @@ class MiniSlime(Slime):
             exp_reward=5 # Less EXP
         )
         self.name = "MiniSlime" # For quest tracking and identification
+        self.default_color = (0, 200, 0)
 
 
 class KingSlime(Slime): # This is now the Boss Slime
@@ -126,6 +178,7 @@ class KingSlime(Slime): # This is now the Boss Slime
             exp_reward=500 # Much more EXP
         )
         self.name = "KingSlime" # For quest tracking
+        self.default_color = (70, 0, 150)
 
         # Boss States
         self.state = "IDLE" # IDLE, JUMP_ATTACK, SUMMON_MINIONS, HURT, DEFEATED
@@ -164,6 +217,7 @@ class KingSlime(Slime): # This is now the Boss Slime
             self.state = "DEFEATED"
             self.vel_x = 0
             self.vel_y = 0
+            self.reset_speed() # Ensure speed is reset if defeated while slowed
             # Play death animation/sound etc. (handled by Game class for now)
             return # Stop further updates for defeated boss
 
@@ -214,7 +268,9 @@ class KingSlime(Slime): # This is now the Boss Slime
         if self.invincible and self.invincibility_timer % 10 < 5:
             self.image.set_alpha(128)
         else:
-            self.image.set_alpha(255)
+            # Only set alpha to 255 if not invinicible and not slowed
+            if not self.is_slowed:
+                self.image.set_alpha(255)
 
         # For KingSlime, override default patrol to be more stationary or target player
         # For now, it will simply stay still if not doing a special attack.
@@ -251,5 +307,6 @@ class KingSlime(Slime): # This is now the Boss Slime
         self.summon_minions_current_cooldown = random.randint(120, self.summon_minions_cooldown)
         self.invincible = False
         self.invincibility_timer = 0
+        self.reset_speed() # Also reset speed if boss was slowed
         print("King Slime state reset.")
 
