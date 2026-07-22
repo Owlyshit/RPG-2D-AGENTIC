@@ -6,7 +6,7 @@ from src.enemy import Slime, KingSlime, MiniSlime # Import MiniSlime
 from src.map import Platform, Portal, GameMap
 from src.npc import NPC, Quest
 from src.skill import IceBolt
-from src.item import HealthPotion, ManaPotion # Import potion items
+from src.item import BronzeSword, HealthPotion, ManaPotion
 
 # Simple data class for spawn points
 class SpawnPoint:
@@ -131,6 +131,7 @@ class Game:
 
         self.dialogue_active = False
         self.current_npc = None
+        self.inventory_open = False
 
 
     def spawn_enemy(self, spawn_point):
@@ -326,6 +327,14 @@ class Game:
                 self.running = False
             
             if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_i:
+                    self.inventory_open = not self.inventory_open
+                    continue
+                if self.inventory_open:
+                    if event.key == pygame.K_q:
+                        self.display_notification(self.player.equip_bronze_sword())
+                    continue
+
                 # Potion usage should not be blocked by dialogue
                 if event.key == pygame.K_1: # Use Health Potion
                     message = self.player.use_health_potion()
@@ -428,7 +437,7 @@ class Game:
         if self.dialogue_active and self.player.potion_cooldown_timer > 0:
             self.player.potion_cooldown_timer -= 1
 
-        if not self.dialogue_active: # Only update game elements if not talking to NPC
+        if not self.dialogue_active and not self.inventory_open:
             self.all_sprites.update(self.platforms.sprites()) # Pass platforms for collision
 
             # Update notification timer
@@ -528,7 +537,7 @@ class Game:
                     ]
                     for enemy in collided_enemies:
                         if not enemy.invincible:
-                            enemy.take_damage(self.player.attack_damage)
+                            enemy.take_damage(self.player.melee_damage)
                             self.enemy_hit_sound.play() # Play enemy hit sound
                             knockback_direction = 1 if enemy.rect.centerx > self.player.rect.centerx else -1
                             enemy.apply_knockback(knockback_direction, 10)
@@ -557,6 +566,14 @@ class Game:
                                 self.enemy_death_sound.play() # Play enemy death sound
                                 print(f"{type(enemy).__name__} defeated! Player gained {enemy.exp_reward} EXP. Player EXP: {self.player.exp}")
             
+            # Bosses cannot be knocked outside the playable arena.
+            if self.boss_instance and self.boss_instance.alive():
+                self.boss_instance.rect.left = max(0, self.boss_instance.rect.left)
+                self.boss_instance.rect.right = min(self.screen_width, self.boss_instance.rect.right)
+                if self.boss_instance.rect.bottom > self.screen_height:
+                    self.boss_instance.rect.bottom = self.screen_height - 40
+                    self.boss_instance.vel_y = 0
+
             # Boundary checks for player (falling off map)
             if self.player.rect.top > self.screen_height:
                 print("Player fell off the map!")
@@ -660,6 +677,39 @@ class Game:
         self.screen.blit(fireball_text, (self.HUD_X, skill_hud_y))
         self.screen.blit(icebolt_text, (self.HUD_X, skill_hud_y + self.BAR_HEIGHT + self.BAR_SPACING))
 
+        weapon_name = self.player.equipped_weapon.name if self.player.equipped_weapon else "Fists"
+        melee_text = self.font.render(
+            f"Melee (J): {weapon_name} | ATK {self.player.melee_damage}",
+            True,
+            self.TEXT_COLOR,
+        )
+        self.screen.blit(melee_text, (self.HUD_X, skill_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 2))
+        inventory_hint = self.font.render("Inventory (I)", True, self.TEXT_COLOR)
+        self.screen.blit(inventory_hint, (self.HUD_X, skill_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 3))
+
+    def draw_inventory(self):
+        panel = pygame.Rect(170, 110, 460, 360)
+        pygame.draw.rect(self.screen, (24, 28, 38), panel, border_radius=10)
+        pygame.draw.rect(self.screen, (220, 190, 90), panel, 3, border_radius=10)
+        title = self.dialogue_font.render("Inventory", True, (255, 230, 150))
+        self.screen.blit(title, (panel.x + 24, panel.y + 20))
+
+        sword = BronzeSword()
+        equipped = self.player.equipped_weapon and self.player.equipped_weapon.item_id == sword.item_id
+        lines = [
+            f"Health Potion x{self.player.inventory.get('health_potion', 0)}",
+            f"Mana Potion x{self.player.inventory.get('mana_potion', 0)}",
+            f"Bronze Sword x{self.player.inventory.get(sword.item_id, 0)}",
+            f"  +{sword.attack_bonus} attack, {sword.attack_range} range",
+            f"Equipped: {self.player.equipped_weapon.name if self.player.equipped_weapon else 'Nothing'}",
+            "",
+            "Q - Equip Bronze Sword" if not equipped else "Bronze Sword equipped",
+            "I - Close inventory",
+        ]
+        for index, line in enumerate(lines):
+            text_surface = self.font.render(line, True, self.TEXT_COLOR)
+            self.screen.blit(text_surface, (panel.x + 28, panel.y + 70 + index * 32))
+
 
     def draw_dialogue_box(self, text):
         # Draw semi-transparent background
@@ -688,6 +738,8 @@ class Game:
 
         if self.dialogue_active and self.current_npc:
             self.draw_dialogue_box(self.current_npc.current_dialogue)
+        if self.inventory_open:
+            self.draw_inventory()
         
         # Draw global notifications
         if self.notification_timer > 0:

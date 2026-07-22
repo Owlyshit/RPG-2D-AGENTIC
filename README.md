@@ -22,6 +22,8 @@ Controls:
 - `A` / `D`: move
 - `Space`: jump and double jump
 - `J`: melee attack
+- `I`: open/close inventory
+- `Q`: equip the Bronze Sword while inventory is open
 - `K`: Fireball
 - `L`: Ice Bolt
 - `Left Shift`: dash

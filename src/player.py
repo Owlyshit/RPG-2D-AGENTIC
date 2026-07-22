@@ -1,6 +1,6 @@
 import pygame
 from src.skill import Fireball, IceBolt # Import Fireball and IceBolt
-from src.item import HealthPotion, ManaPotion # Import potion items
+from src.item import BronzeSword, HealthPotion, ManaPotion, Weapon
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height, walk_speed, jump_strength, gravity):
@@ -21,7 +21,7 @@ class Player(pygame.sprite.Sprite):
         self.max_hp = 100
         self.mp = 50
         self.max_mp = 50
-        self.attack_damage = 20
+        self.attack_damage = 12
         self.exp = 0
         self.level = 1
         self.exp_to_next_level = 100
@@ -75,7 +75,9 @@ class Player(pygame.sprite.Sprite):
         self.inventory = {
             "health_potion": 5,
             "mana_potion": 3,
+            "bronze_sword": 1,
         } # item_id: quantity
+        self.equipped_weapon = None
         self.POTION_MAX_STACK = 99
         self.potion_cooldown_timer = 0
         self.POTION_COOLDOWN_DURATION = 60 # frames (1 second)
@@ -116,10 +118,27 @@ class Player(pygame.sprite.Sprite):
         self.attack_cooldown = self.ATTACK_COOLDOWN_TIME
         self.attack_animation_timer = self.attack_animation_duration # Start animation timer
         # Define attack hitbox relative to player
+        attack_range = self.equipped_weapon.attack_range if self.equipped_weapon else 28
         if self.facing_right:
-            self.attack_hitbox = pygame.Rect(self.rect.right, self.rect.centery - 10, 30, 20)
+            self.attack_hitbox = pygame.Rect(self.rect.right, self.rect.centery - 12, attack_range, 24)
         else:
-            self.attack_hitbox = pygame.Rect(self.rect.left - 30, self.rect.centery - 10, 30, 20)
+            self.attack_hitbox = pygame.Rect(self.rect.left - attack_range, self.rect.centery - 12, attack_range, 24)
+
+    def equip_weapon(self, weapon):
+        if not isinstance(weapon, Weapon):
+            return "That item cannot be equipped."
+        if self.inventory.get(weapon.item_id, 0) <= 0:
+            return f"You do not own {weapon.name}."
+        self.equipped_weapon = weapon
+        return f"Equipped {weapon.name} (+{weapon.attack_bonus} attack)."
+
+    def equip_bronze_sword(self):
+        return self.equip_weapon(BronzeSword())
+
+    @property
+    def melee_damage(self):
+        bonus = self.equipped_weapon.attack_bonus if self.equipped_weapon else 0
+        return self.attack_damage + bonus
 
     def cast_fireball(self):
         if self.mp >= self.fireball_mp_cost and self.fireball_current_cooldown <= 0:
@@ -431,8 +450,9 @@ class Player(pygame.sprite.Sprite):
         if self.is_attacking and self.attack_animation_timer > 0:
             animation_progress = (self.attack_animation_duration - self.attack_animation_timer) / self.attack_animation_duration
             
-            # Simple expanding rectangle animation
-            animation_width = int(30 * (1 + animation_progress * 0.5)) # Grows by 50%
+            # Simple expanding weapon swing
+            base_range = self.equipped_weapon.attack_range if self.equipped_weapon else 28
+            animation_width = int(base_range * (1 + animation_progress * 0.2))
             animation_height = int(20 * (1 + animation_progress * 0.2)) # Grows by 20%
             
             if self.facing_right:
@@ -440,5 +460,6 @@ class Player(pygame.sprite.Sprite):
             else:
                 anim_rect = pygame.Rect(self.rect.left - animation_width, self.rect.centery - animation_height // 2, animation_width, animation_height)
             
-            pygame.draw.rect(screen, (255, 200, 0), anim_rect, 0, border_radius=3) # Yellow-orange fill
-            pygame.draw.rect(screen, (255, 255, 0), anim_rect, 1, border_radius=3) # Yellow outline
+            blade_color = (210, 220, 235) if self.equipped_weapon else (255, 200, 0)
+            pygame.draw.rect(screen, blade_color, anim_rect, 0, border_radius=3)
+            pygame.draw.rect(screen, (255, 255, 255), anim_rect, 2, border_radius=3)

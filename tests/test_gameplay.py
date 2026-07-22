@@ -10,6 +10,7 @@ import pygame
 
 from src.enemy import KingSlime, Slime
 from src.game import Game
+from src.item import BronzeSword
 from src.player import Player
 from src.skill import IceBolt
 
@@ -181,6 +182,42 @@ class GameplayTests(unittest.TestCase):
                 break
 
         self.assertTrue(landed)
+
+    def test_boss_cannot_be_knocked_outside_arena(self):
+        game = Game()
+        game.load_map("slime_hollow", "west_entry")
+        boss = game.boss_instance
+
+        boss.rect.right = game.screen_width - 1
+        boss.apply_knockback(1, 100)
+        for _ in range(30):
+            game.update()
+
+        self.assertGreaterEqual(boss.rect.left, 0)
+        self.assertLessEqual(boss.rect.right, game.screen_width)
+        self.assertLessEqual(boss.rect.bottom, game.screen_height)
+
+    def test_bronze_sword_increases_melee_damage_and_range(self):
+        player = Player(100, 100, 32, 64, 5, -10, 0.5)
+        base_damage = player.melee_damage
+        player.facing_right = True
+
+        message = player.equip_bronze_sword()
+        player.start_attack()
+
+        self.assertIn("Equipped Bronze Sword", message)
+        self.assertEqual(player.melee_damage, base_damage + BronzeSword().attack_bonus)
+        self.assertEqual(player.attack_hitbox.width, BronzeSword().attack_range)
+
+    def test_inventory_hotkeys_open_and_equip_sword(self):
+        game = Game()
+        pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_i))
+        pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_q))
+
+        game.handle_input()
+
+        self.assertTrue(game.inventory_open)
+        self.assertEqual(game.player.equipped_weapon.item_id, "bronze_sword")
 
 
 if __name__ == "__main__":
