@@ -23,6 +23,7 @@ class Slime(pygame.sprite.Sprite):
         self.max_hp = max_hp
         self.contact_damage = contact_damage
         self.exp_reward = exp_reward
+        self.name = "Slime"
 
         self.invincible = False
         self.invincibility_timer = 0

@@ -5,7 +5,7 @@ from src.player import Player
 from src.enemy import Slime, KingSlime, MiniSlime # Import MiniSlime
 from src.map import Platform, Portal, GameMap
 from src.npc import NPC, Quest
-from src.skill import Fireball # Import Fireball
+from src.skill import IceBolt
 from src.item import HealthPotion, ManaPotion # Import potion items
 
 # Simple data class for spawn points
@@ -315,10 +315,20 @@ class Game:
                         self.player.start_attack()
                         self.melee_sound.play() # Play melee sound
                     elif event.key == pygame.K_k: # Cast Fireball
-                        new_fireball = self.player.cast_fireball()
-                        if new_fireball:
-                            self.projectiles.add(new_fireball)
-                            self.all_sprites.add(new_fireball)
+                        result = self.player.cast_fireball()
+                        if isinstance(result, str):
+                            self.display_notification(result)
+                        elif result:
+                            self.projectiles.add(result)
+                            self.all_sprites.add(result)
+                            self.magic_sound.play() # Play magic sound
+                    elif event.key == pygame.K_l: # Cast Ice Bolt
+                        result = self.player.cast_icebolt()
+                        if isinstance(result, str):
+                            self.display_notification(result)
+                        elif result:
+                            self.projectiles.add(result)
+                            self.all_sprites.add(result)
                             self.magic_sound.play() # Play magic sound
                     elif event.key == pygame.K_e: # Check for NPC interaction
                         for npc in self.npcs:
@@ -350,7 +360,6 @@ class Game:
 
         if not self.dialogue_active: # Only update game elements if not talking to NPC
             self.all_sprites.update(self.platforms.sprites()) # Pass platforms for collision
-            self.projectiles.update(self.platforms.sprites()) # Update projectiles
 
             # Update notification timer
             if self.notification_timer > 0:
@@ -417,6 +426,11 @@ class Game:
                 for enemy in collided_enemies:
                     if not enemy.invincible:
                         enemy.take_damage(projectile.damage)
+                        if isinstance(projectile, IceBolt) and enemy.hp > 0:
+                            enemy.apply_slow_effect(
+                                projectile.slow_duration,
+                                projectile.slow_percentage,
+                            )
                         self.enemy_hit_sound.play() # Play enemy hit sound
                         # Apply knockback to enemy
                         knockback_direction = 1 if enemy.rect.centerx > projectile.rect.centerx else -1
@@ -445,8 +459,8 @@ class Game:
                             enemy.kill()
                             self.enemy_death_sound.play() # Play enemy death sound
                             print(f"{type(enemy).__name__} defeated! Player gained {enemy.exp_reward} EXP. Player EXP: {self.player.exp}")
-                    projectile.kill() # Fireball disappears on hit (even if enemy is invincible)
-                    break # Fireball hits only one enemy and disappears
+                    projectile.kill() # Projectile disappears on hit (even if enemy is invincible)
+                    break # Projectiles hit only one enemy
 
             # Melee Attack logic
             if self.player.is_attacking:
@@ -569,6 +583,17 @@ class Game:
             cooldown_seconds = self.player.potion_cooldown_timer / 60
             cooldown_text = self.font.render(f"Potion CD: {cooldown_seconds:.1f}s", True, (255, 100, 100)) # Reddish color for cooldown
             self.screen.blit(cooldown_text, (self.HUD_X + self.BAR_WIDTH + 20, potion_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 0.5))
+
+        # Magic skill hotkeys and cooldowns
+        skill_hud_y = potion_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 2
+        fireball_seconds = self.player.fireball_current_cooldown / 60
+        icebolt_seconds = self.player.icebolt_current_cooldown / 60
+        fireball_status = "Ready" if fireball_seconds <= 0 else f"{fireball_seconds:.1f}s"
+        icebolt_status = "Ready" if icebolt_seconds <= 0 else f"{icebolt_seconds:.1f}s"
+        fireball_text = self.font.render(f"Fireball (K): {fireball_status}", True, self.TEXT_COLOR)
+        icebolt_text = self.font.render(f"Ice Bolt (L): {icebolt_status}", True, self.TEXT_COLOR)
+        self.screen.blit(fireball_text, (self.HUD_X, skill_hud_y))
+        self.screen.blit(icebolt_text, (self.HUD_X, skill_hud_y + self.BAR_HEIGHT + self.BAR_SPACING))
 
 
     def draw_dialogue_box(self, text):

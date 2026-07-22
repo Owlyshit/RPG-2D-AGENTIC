@@ -36,4 +36,3 @@ class IceBolt(Projectile):
         self.name = "IceBolt"
         self.slow_duration = slow_duration # frames
         self.slow_percentage = slow_percentage # e.g., 0.5 for 50% slow
-
