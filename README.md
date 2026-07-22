@@ -23,8 +23,11 @@ Controls:
 - `Space`: jump and double jump
 - `J`: melee attack
 - `I`: open/close inventory
+- `S`: open/close the character stat builder
 - `Q/W/E/R`: equip sword, helmet, shirt, or pants while inventory is open
 - `1/2/3/4`: spend available stat points on STR/DEX/INT/LUK while inventory is open
+
+Inventory supports mouse controls: click the `Equip`, `Use`, and `Etc` tabs, then drag equipment from the bag onto matching character slots. In the stat builder, click `+` beside a stat to spend AP.
 - `K`: Fireball
 - `L`: Ice Bolt
 - `Left Shift`: dash
