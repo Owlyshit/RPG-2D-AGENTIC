@@ -464,7 +464,11 @@ class Game:
             # Melee Attack logic
             if self.player.is_attacking:
                 if self.player.attack_hitbox.width > 0:
-                    for enemy in pygame.sprite.spritecollide(self.player.attack_hitbox, self.enemies, False):
+                    collided_enemies = [
+                        enemy for enemy in self.enemies
+                        if self.player.attack_hitbox.colliderect(enemy.rect)
+                    ]
+                    for enemy in collided_enemies:
                         if not enemy.invincible:
                             enemy.take_damage(self.player.attack_damage)
                             self.enemy_hit_sound.play() # Play enemy hit sound
