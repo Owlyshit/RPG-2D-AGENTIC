@@ -91,6 +91,19 @@ class GameplayTests(unittest.TestCase):
 
         self.assertEqual(sum(game.player.inventory.values()), initial_potions + 1)
 
+    def test_melee_hitbox_damages_enemy_without_crashing(self):
+        game = Game()
+        slime = next(enemy for enemy in game.enemies if enemy.name == "Slime")
+        game.player.rect.topleft = (100, 500)
+        slime.rect.topleft = (game.player.rect.right + 5, game.player.rect.top)
+        starting_hp = slime.hp
+
+        game.player.facing_right = True
+        game.player.start_attack()
+        game.update()
+
+        self.assertEqual(slime.hp, starting_hp - game.player.attack_damage)
+
 
 if __name__ == "__main__":
     unittest.main()
