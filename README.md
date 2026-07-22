@@ -23,7 +23,8 @@ Controls:
 - `Space`: jump and double jump
 - `J`: melee attack
 - `I`: open/close inventory
-- `Q`: equip the Bronze Sword while inventory is open
+- `Q/W/E/R`: equip sword, helmet, shirt, or pants while inventory is open
+- `1/2/3/4`: spend available stat points on STR/DEX/INT/LUK while inventory is open
 - `K`: Fireball
 - `L`: Ice Bolt
 - `Left Shift`: dash

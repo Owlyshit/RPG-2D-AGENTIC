@@ -1,6 +1,9 @@
 import pygame
 from src.skill import Fireball, IceBolt # Import Fireball and IceBolt
-from src.item import BronzeSword, HealthPotion, ManaPotion, Weapon
+from src.item import (
+    Armor, BronzeSword, HealthPotion, LeatherCap, ManaPotion,
+    TrainingShirt, TravelerPants, Weapon,
+)
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height, walk_speed, jump_strength, gravity):
@@ -25,6 +28,8 @@ class Player(pygame.sprite.Sprite):
         self.exp = 0
         self.level = 1
         self.exp_to_next_level = 100
+        self.stats = {"strength": 4, "dexterity": 4, "intelligence": 4, "luck": 4}
+        self.stat_points = 0
 
         self.is_attacking = False
         self.attack_cooldown = 0
@@ -76,8 +81,12 @@ class Player(pygame.sprite.Sprite):
             "health_potion": 5,
             "mana_potion": 3,
             "bronze_sword": 1,
+            "leather_cap": 1,
+            "training_shirt": 1,
+            "traveler_pants": 1,
         } # item_id: quantity
         self.equipped_weapon = None
+        self.equipment = {"helmet": None, "shirt": None, "pants": None}
         self.POTION_MAX_STACK = 99
         self.potion_cooldown_timer = 0
         self.POTION_COOLDOWN_DURATION = 60 # frames (1 second)
@@ -115,7 +124,8 @@ class Player(pygame.sprite.Sprite):
 
     def start_attack(self):
         self.is_attacking = True
-        self.attack_cooldown = self.ATTACK_COOLDOWN_TIME
+        dexterity_bonus = max(0, self.total_stat("dexterity") - 4)
+        self.attack_cooldown = max(12, self.ATTACK_COOLDOWN_TIME - dexterity_bonus)
         self.attack_animation_timer = self.attack_animation_duration # Start animation timer
         # Define attack hitbox relative to player
         attack_range = self.equipped_weapon.attack_range if self.equipped_weapon else 28
@@ -135,10 +145,51 @@ class Player(pygame.sprite.Sprite):
     def equip_bronze_sword(self):
         return self.equip_weapon(BronzeSword())
 
+    def equip_armor(self, armor):
+        if not isinstance(armor, Armor):
+            return "That item is not armor."
+        if self.inventory.get(armor.item_id, 0) <= 0:
+            return f"You do not own {armor.name}."
+        self.equipment[armor.slot] = armor
+        return f"Equipped {armor.name} in {armor.slot}."
+
+    def equip_starter_armor(self, slot):
+        items = {
+            "helmet": LeatherCap(),
+            "shirt": TrainingShirt(),
+            "pants": TravelerPants(),
+        }
+        return self.equip_armor(items[slot])
+
+    def allocate_stat(self, stat_name):
+        if stat_name not in self.stats:
+            return "Unknown stat."
+        if self.stat_points <= 0:
+            return "No stat points available."
+        self.stats[stat_name] += 1
+        self.stat_points -= 1
+        return f"{stat_name.title()} increased to {self.stats[stat_name]}."
+
+    def total_stat(self, stat_name):
+        bonus = sum(
+            item.stat_bonuses.get(stat_name, 0)
+            for item in self.equipment.values() if item
+        )
+        return self.stats[stat_name] + bonus
+
+    @property
+    def defense(self):
+        return sum(item.defense for item in self.equipment.values() if item)
+
     @property
     def melee_damage(self):
-        bonus = self.equipped_weapon.attack_bonus if self.equipped_weapon else 0
-        return self.attack_damage + bonus
+        weapon_bonus = self.equipped_weapon.attack_bonus if self.equipped_weapon else 0
+        strength_bonus = max(0, self.total_stat("strength") - 4)
+        return self.attack_damage + weapon_bonus + strength_bonus
+
+    @property
+    def spell_damage_bonus(self):
+        return max(0, self.total_stat("intelligence") - 4)
 
     def cast_fireball(self):
         if self.mp >= self.fireball_mp_cost and self.fireball_current_cooldown <= 0:
@@ -149,7 +200,7 @@ class Player(pygame.sprite.Sprite):
             fb_x = self.rect.centerx + (self.rect.width // 2 * (1 if self.facing_right else -1))
             fb_y = self.rect.centery
 
-            fireball = Fireball(fb_x, fb_y, (1 if self.facing_right else -1), self.magic_damage, self.fireball_speed)
+            fireball = Fireball(fb_x, fb_y, (1 if self.facing_right else -1), self.magic_damage + self.spell_damage_bonus, self.fireball_speed)
             print(f"Player cast Fireball! MP: {self.mp}/{self.max_mp}")
             return fireball
         elif self.mp < self.fireball_mp_cost:
@@ -167,7 +218,7 @@ class Player(pygame.sprite.Sprite):
             ib_x = self.rect.centerx + (self.rect.width // 2 * (1 if self.facing_right else -1))
             ib_y = self.rect.centery
 
-            icebolt = IceBolt(ib_x, ib_y, (1 if self.facing_right else -1), self.icebolt_damage, self.icebolt_speed,
+            icebolt = IceBolt(ib_x, ib_y, (1 if self.facing_right else -1), self.icebolt_damage + self.spell_damage_bonus, self.icebolt_speed,
                               self.icebolt_slow_duration, self.icebolt_slow_percentage)
             print(f"Player cast Ice Bolt! MP: {self.mp}/{self.max_mp}")
             return icebolt
@@ -306,8 +357,9 @@ class Player(pygame.sprite.Sprite):
 
     def take_damage(self, damage):
         if not self.invincible:
-            self.hp -= damage
-            print(f"Player took {damage} damage. HP: {self.hp}")
+            damage_taken = max(1, damage - self.defense)
+            self.hp -= damage_taken
+            print(f"Player took {damage_taken} damage. HP: {self.hp}")
             self.start_invincibility()
 
     def start_invincibility(self, duration=None):
@@ -335,6 +387,7 @@ class Player(pygame.sprite.Sprite):
             self.max_mp += 5 # Increase max MP
             self.mp = self.max_mp # Restore MP on level up
             self.attack_damage += 5
+            self.stat_points += 5
             print(f"Player Leveled Up! Level: {self.level}, HP: {self.hp}/{self.max_hp}, MP: {self.mp}/{self.max_mp}, Attack: {self.attack_damage}")
         
 

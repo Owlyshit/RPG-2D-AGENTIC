@@ -6,7 +6,10 @@ from src.enemy import Slime, KingSlime, MiniSlime # Import MiniSlime
 from src.map import Platform, Portal, GameMap
 from src.npc import NPC, Quest
 from src.skill import IceBolt
-from src.item import BronzeSword, HealthPotion, ManaPotion
+from src.item import (
+    BronzeSword, HealthPotion, LeatherCap, ManaPotion,
+    TrainingShirt, TravelerPants,
+)
 
 # Simple data class for spawn points
 class SpawnPoint:
@@ -331,8 +334,20 @@ class Game:
                     self.inventory_open = not self.inventory_open
                     continue
                 if self.inventory_open:
-                    if event.key == pygame.K_q:
-                        self.display_notification(self.player.equip_bronze_sword())
+                    equipment_keys = {
+                        pygame.K_q: lambda: self.player.equip_bronze_sword(),
+                        pygame.K_w: lambda: self.player.equip_starter_armor("helmet"),
+                        pygame.K_e: lambda: self.player.equip_starter_armor("shirt"),
+                        pygame.K_r: lambda: self.player.equip_starter_armor("pants"),
+                    }
+                    stat_keys = {
+                        pygame.K_1: "strength", pygame.K_2: "dexterity",
+                        pygame.K_3: "intelligence", pygame.K_4: "luck",
+                    }
+                    if event.key in equipment_keys:
+                        self.display_notification(equipment_keys[event.key]())
+                    elif event.key in stat_keys:
+                        self.display_notification(self.player.allocate_stat(stat_keys[event.key]))
                     continue
 
                 # Potion usage should not be blocked by dialogue
@@ -588,7 +603,8 @@ class Game:
                 self.player.rect.right = self.screen_width
 
     def _handle_enemy_drop(self, x, y, enemy):
-        drop_chance = random.random() # 0.0 to 1.0
+        luck_bonus = max(0, self.player.total_stat("luck") - 4) * 0.005
+        drop_chance = random.random() - luck_bonus
         dropped_item = None
 
         # Check subclasses before Slime because KingSlime and MiniSlime inherit it.
@@ -688,27 +704,69 @@ class Game:
         self.screen.blit(inventory_hint, (self.HUD_X, skill_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 3))
 
     def draw_inventory(self):
-        panel = pygame.Rect(170, 110, 460, 360)
-        pygame.draw.rect(self.screen, (24, 28, 38), panel, border_radius=10)
-        pygame.draw.rect(self.screen, (220, 190, 90), panel, 3, border_radius=10)
-        title = self.dialogue_font.render("Inventory", True, (255, 230, 150))
-        self.screen.blit(title, (panel.x + 24, panel.y + 20))
+        panel = pygame.Rect(70, 55, 660, 490)
+        pygame.draw.rect(self.screen, (37, 45, 58), panel, border_radius=12)
+        pygame.draw.rect(self.screen, (218, 174, 84), panel, 4, border_radius=12)
+        title = self.dialogue_font.render("Character & Inventory", True, (255, 232, 160))
+        self.screen.blit(title, (panel.x + 20, panel.y + 14))
 
-        sword = BronzeSword()
-        equipped = self.player.equipped_weapon and self.player.equipped_weapon.item_id == sword.item_id
-        lines = [
-            f"Health Potion x{self.player.inventory.get('health_potion', 0)}",
-            f"Mana Potion x{self.player.inventory.get('mana_potion', 0)}",
-            f"Bronze Sword x{self.player.inventory.get(sword.item_id, 0)}",
-            f"  +{sword.attack_bonus} attack, {sword.attack_range} range",
-            f"Equipped: {self.player.equipped_weapon.name if self.player.equipped_weapon else 'Nothing'}",
-            "",
-            "Q - Equip Bronze Sword" if not equipped else "Bronze Sword equipped",
-            "I - Close inventory",
+        # Paper-doll equipment pane.
+        equipment_panel = pygame.Rect(panel.x + 18, panel.y + 55, 250, 250)
+        pygame.draw.rect(self.screen, (25, 31, 43), equipment_panel, border_radius=8)
+        slot_specs = [
+            ("helmet", "Helmet", (equipment_panel.centerx - 55, equipment_panel.y + 18)),
+            ("shirt", "Shirt", (equipment_panel.centerx - 55, equipment_panel.y + 92)),
+            ("pants", "Pants", (equipment_panel.centerx - 55, equipment_panel.y + 166)),
+            ("weapon", "Weapon", (equipment_panel.x + 12, equipment_panel.y + 92)),
         ]
-        for index, line in enumerate(lines):
+        for slot, label, position in slot_specs:
+            slot_rect = pygame.Rect(position[0], position[1], 110, 58)
+            pygame.draw.rect(self.screen, (63, 72, 90), slot_rect, border_radius=6)
+            pygame.draw.rect(self.screen, (145, 157, 180), slot_rect, 2, border_radius=6)
+            item = self.player.equipped_weapon if slot == "weapon" else self.player.equipment[slot]
+            name = item.name if item else label
+            text_surface = self.font.render(name, True, self.TEXT_COLOR)
+            self.screen.blit(text_surface, (slot_rect.x + 7, slot_rect.centery - 9))
+
+        # Bag pane with owned starter gear and consumables.
+        bag_panel = pygame.Rect(panel.x + 286, panel.y + 55, 356, 250)
+        pygame.draw.rect(self.screen, (25, 31, 43), bag_panel, border_radius=8)
+        bag_title = self.font.render("Item Bag", True, (255, 220, 120))
+        self.screen.blit(bag_title, (bag_panel.x + 14, bag_panel.y + 10))
+        items = [
+            ("Q", BronzeSword(), "+8 ATK / 42 range"),
+            ("W", LeatherCap(), "+2 DEF / +1 DEX"),
+            ("E", TrainingShirt(), "+3 DEF / +1 STR"),
+            ("R", TravelerPants(), "+2 DEF / +1 LUK"),
+        ]
+        for index, (key, item, detail) in enumerate(items):
+            owned = self.player.inventory.get(item.item_id, 0)
+            line = f"[{key}] {item.name} x{owned}  {detail}"
             text_surface = self.font.render(line, True, self.TEXT_COLOR)
-            self.screen.blit(text_surface, (panel.x + 28, panel.y + 70 + index * 32))
+            self.screen.blit(text_surface, (bag_panel.x + 14, bag_panel.y + 45 + index * 34))
+        consumables = self.font.render(
+            f"HP Potion x{self.player.inventory.get('health_potion', 0)}    MP Potion x{self.player.inventory.get('mana_potion', 0)}",
+            True, self.TEXT_COLOR,
+        )
+        self.screen.blit(consumables, (bag_panel.x + 14, bag_panel.y + 192))
+
+        # Character stats and allocation controls.
+        stats_panel = pygame.Rect(panel.x + 18, panel.y + 322, 624, 135)
+        pygame.draw.rect(self.screen, (25, 31, 43), stats_panel, border_radius=8)
+        stat_labels = [("strength", "STR", "1"), ("dexterity", "DEX", "2"), ("intelligence", "INT", "3"), ("luck", "LUK", "4")]
+        for index, (stat, label, key) in enumerate(stat_labels):
+            x = stats_panel.x + 16 + (index % 2) * 210
+            y = stats_panel.y + 16 + (index // 2) * 34
+            value = self.player.total_stat(stat)
+            text_surface = self.font.render(f"[{key}] {label}: {value}", True, self.TEXT_COLOR)
+            self.screen.blit(text_surface, (x, y))
+        totals = self.font.render(
+            f"Level {self.player.level}   AP: {self.player.stat_points}   ATK: {self.player.melee_damage}   DEF: {self.player.defense}",
+            True, (255, 220, 120),
+        )
+        self.screen.blit(totals, (stats_panel.x + 16, stats_panel.y + 88))
+        close_hint = self.font.render("I - Close", True, self.TEXT_COLOR)
+        self.screen.blit(close_hint, (panel.right - 90, panel.y + 18))
 
 
     def draw_dialogue_box(self, text):
