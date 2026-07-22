@@ -6,6 +6,7 @@ from src.enemy import Slime, KingSlime, MiniSlime # Import MiniSlime
 from src.map import Platform, Portal, GameMap
 from src.npc import NPC, Quest
 from src.skill import IceBolt
+from src.save_manager import DEFAULT_SAVE_FILE, load_game, save_game
 from src.item import (
     BronzeSword, HealthPotion, LeatherCap, ManaPotion,
     TrainingShirt, TravelerPants,
@@ -142,6 +143,7 @@ class Game:
         self.inventory_item_rects = {}
         self.equipment_slot_rects = {}
         self.stat_button_rects = {}
+        self.save_file = DEFAULT_SAVE_FILE
 
 
     def spawn_enemy(self, spawn_point):
@@ -375,6 +377,95 @@ class Game:
                     self.display_notification(self.player.allocate_stat(stat))
                     return
 
+    def _build_save_state(self):
+        quests = {
+            quest_id: {
+                "completed": status["completed"],
+                "current_count": status["current_count"],
+            }
+            for quest_id, status in self.player.active_quests.items()
+        }
+        return {
+            "map_id": self.current_map_id,
+            "player": {
+                "level": self.player.level,
+                "exp": self.player.exp,
+                "exp_to_next_level": self.player.exp_to_next_level,
+                "hp": self.player.hp,
+                "max_hp": self.player.max_hp,
+                "mp": self.player.mp,
+                "max_mp": self.player.max_mp,
+                "attack_damage": self.player.attack_damage,
+                "stats": self.player.stats,
+                "stat_points": self.player.stat_points,
+                "inventory": self.player.inventory,
+                "weapon": self.player.equipped_weapon.item_id if self.player.equipped_weapon else None,
+                "equipment": {
+                    slot: item.item_id if item else None
+                    for slot, item in self.player.equipment.items()
+                },
+                "quests": quests,
+            },
+        }
+
+    def save_current_game(self):
+        save_game(self._build_save_state(), self.save_file)
+        self.display_notification("Game saved.")
+
+    def load_saved_game(self):
+        state = load_game(self.save_file)
+        if not state:
+            self.display_notification("No valid save file found.")
+            return False
+        player_state = state.get("player", {})
+        required = ("level", "exp", "hp", "max_hp", "mp", "max_mp", "stats", "inventory")
+        if any(key not in player_state for key in required):
+            self.display_notification("Save file is incomplete.")
+            return False
+
+        for attribute in ("level", "exp", "exp_to_next_level", "hp", "max_hp", "mp", "max_mp", "attack_damage", "stat_points"):
+            if attribute in player_state:
+                setattr(self.player, attribute, player_state[attribute])
+        self.player.stats = dict(player_state["stats"])
+        self.player.inventory = dict(player_state["inventory"])
+        self.player.equipped_weapon = None
+        self.player.equipment = {"helmet": None, "shirt": None, "pants": None}
+        catalog = self._inventory_catalog()
+        weapon_id = player_state.get("weapon")
+        if weapon_id in catalog:
+            self.player.equip_weapon(catalog[weapon_id])
+        for slot, item_id in player_state.get("equipment", {}).items():
+            if slot in self.player.equipment and item_id in catalog:
+                self.player.equip_armor(catalog[item_id])
+
+        self.player.active_quests = {}
+        for quest_id, saved_status in player_state.get("quests", {}).items():
+            if quest_id == "slime_trouble":
+                quest = self._make_slime_quest()
+                self.player.active_quests[quest_id] = {
+                    "accepted": True,
+                    "completed": bool(saved_status.get("completed", False)),
+                    "current_count": int(saved_status.get("current_count", 0)),
+                    "quest_obj": quest,
+                }
+        map_id = state.get("map_id", "meadow_village")
+        if map_id not in self.map_definitions:
+            map_id = "meadow_village"
+        spawn_id = next(iter(self.map_definitions[map_id]["spawns"]))
+        self.load_map(map_id, spawn_id)
+        self.display_notification("Game loaded.")
+        return True
+
+    def handle_player_defeat(self):
+        lost_exp = min(self.player.exp, max(1, self.player.exp // 10)) if self.player.exp else 0
+        self.player.exp -= lost_exp
+        self.player.hp = self.player.max_hp
+        self.player.mp = self.player.max_mp
+        self.player.invincible = False
+        self.player.invincibility_timer = 0
+        self.load_map("meadow_village", "start")
+        self.display_notification(f"You were defeated. Lost {lost_exp} EXP and returned to town.", 180)
+
 
     def handle_input(self):
         for event in pygame.event.get():
@@ -389,6 +480,12 @@ class Game:
                 continue
 
             if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_F5:
+                    self.save_current_game()
+                    continue
+                if event.key == pygame.K_F9:
+                    self.load_saved_game()
+                    continue
                 if event.key == pygame.K_i:
                     self.inventory_open = not self.inventory_open
                     self.stats_open = False
@@ -674,6 +771,8 @@ class Game:
                 self.player.rect.left = 0
             if self.player.rect.right > self.screen_width:
                 self.player.rect.right = self.screen_width
+            if self.player.hp <= 0:
+                self.handle_player_defeat()
 
     def _handle_enemy_drop(self, x, y, enemy):
         luck_bonus = max(0, self.player.total_stat("luck") - 4) * 0.005
@@ -775,6 +874,8 @@ class Game:
         self.screen.blit(melee_text, (self.HUD_X, skill_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 2))
         inventory_hint = self.font.render("Inventory (I)", True, self.TEXT_COLOR)
         self.screen.blit(inventory_hint, (self.HUD_X, skill_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 3))
+        save_hint = self.font.render("Save F5 | Load F9 | Stats S", True, self.TEXT_COLOR)
+        self.screen.blit(save_hint, (self.HUD_X, skill_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 4))
 
     def draw_inventory(self):
         panel = pygame.Rect(90, 75, 620, 440)
