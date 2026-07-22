@@ -48,6 +48,10 @@ class Game:
 
         self.enemy_spawn_points = [] # List to manage enemy respawns
         self.boss_instance = None # To hold a reference to the KingSlime boss
+        self.current_map_id = None
+        self.current_map_name = ""
+        self.map_background_color = (135, 206, 235)
+        self.portal_transition_cooldown = 0
 
         # Game state for notifications
         self.notification_message = ""
@@ -94,8 +98,6 @@ class Game:
         # Set sound volumes (optional, default is 1.0)
         # self.jump_sound.set_volume(0.5)
 
-        self.setup_map()
-
         self.player = Player(
             x=100, y=self.screen_height - 100,
             width=32, height=64,
@@ -104,6 +106,8 @@ class Game:
             gravity=self.gravity
         )
         self.all_sprites.add(self.player)
+        self.map_definitions = self._build_map_definitions()
+        self.load_map("meadow_village", "start")
 
         # HUD setup
         pygame.font.init()
@@ -187,62 +191,127 @@ class Game:
             print(f"Spawned a MiniSlime at ({spawn_x}, {spawn_y})")
 
 
-    def setup_map(self):
-        # Define platforms
-        platforms_data = [
-            (0, self.screen_height - 40, self.screen_width, 40, False),  # Ground
-            (150, self.screen_height - 150, 200, 20, False),
-            (450, self.screen_height - 250, 150, 20, True),  # One-way platform
-        ]
+    def _build_map_definitions(self):
+        ground_y = self.screen_height - 40
+        return {
+            "meadow_village": {
+                "name": "Greenleaf Village",
+                "background": (135, 206, 235),
+                "spawns": {"start": (100, ground_y - 64), "east_entry": (650, ground_y - 64)},
+                "platforms": [
+                    (0, ground_y, 800, 40, False),
+                    (130, 440, 180, 20, True),
+                    (410, 355, 170, 20, True),
+                ],
+                "enemies": [
+                    (330, 520, "Slime", 300, 80, 1),
+                    (610, 520, "Slime", 300, 70, 1),
+                    (200, 400, "Slime", 300, 45, 1),
+                ],
+                "portals": [(740, 500, 50, 60, "whispering_forest", "west_entry")],
+                "npcs": [
+                    (360, 496, "Farmer John", "The slimes are multiplying! Defeat five and I'll reward you.", "Keep thinning their numbers!", "The fields are safe again. Thank you!", "slime_quest"),
+                    (70, 496, "Mira the Healer", "Rest by the village fountain whenever your journey grows difficult.", "", "", None),
+                ],
+            },
+            "whispering_forest": {
+                "name": "Whispering Forest",
+                "background": (72, 132, 108),
+                "spawns": {"west_entry": (85, ground_y - 64), "east_entry": (660, ground_y - 64)},
+                "platforms": [
+                    (0, ground_y, 800, 40, False),
+                    (100, 430, 150, 20, True),
+                    (320, 330, 170, 20, True),
+                    (570, 430, 140, 20, True),
+                ],
+                "enemies": [
+                    (220, 520, "Slime", 240, 100, 1.2),
+                    (390, 290, "Slime", 240, 60, 1.2),
+                    (590, 390, "MiniSlime", 240, 55, 1.5),
+                    (680, 520, "Slime", 240, 70, 1.2),
+                ],
+                "portals": [
+                    (10, 500, 50, 60, "meadow_village", "east_entry"),
+                    (740, 500, 50, 60, "slime_hollow", "west_entry"),
+                ],
+                "npcs": [
+                    (370, 496, "Ranger Rowan", "The eastern hollow belongs to King Slime. Prepare before entering.", "", "", None),
+                    (135, 366, "Lost Explorer", "These old platforms lead through the canopy. I nearly missed the path home.", "", "", None),
+                ],
+            },
+            "slime_hollow": {
+                "name": "Slime King's Hollow",
+                "background": (72, 61, 109),
+                "spawns": {"west_entry": (85, ground_y - 64)},
+                "platforms": [
+                    (0, ground_y, 800, 40, False),
+                    (180, 400, 140, 20, True),
+                    (480, 400, 140, 20, True),
+                ],
+                "enemies": [
+                    (510, 456, "KingSlime", 36000, 70, 0.7),
+                    (260, 520, "MiniSlime", 360, 60, 1.4),
+                ],
+                "portals": [(10, 500, 50, 60, "whispering_forest", "east_entry")],
+                "npcs": [
+                    (100, 496, "Scholar Pip", "King Slime alternates between crushing leaps and summoning minions.", "", "", None),
+                ],
+            },
+        }
+
+    def _make_slime_quest(self):
+        return Quest(
+            q_id='slime_trouble', name='Slime Trouble', objective_type='kill',
+            objective_target='Slime', objective_count=5, reward_exp=50,
+            is_repeatable=True,
+        )
+
+    def load_map(self, map_id, spawn_point_id):
+        definition = self.map_definitions[map_id]
+        self.all_sprites.empty()
+        self.platforms.empty()
+        self.enemies.empty()
+        self.portals.empty()
+        self.npcs.empty()
+        self.projectiles.empty()
+        self.enemy_spawn_points = []
+        self.boss_instance = None
+
+        self.current_map_id = map_id
+        self.current_map_name = definition["name"]
+        self.map_background_color = definition["background"]
+        self.all_sprites.add(self.player)
+
+        platforms_data = definition["platforms"]
         for x, y, w, h, one_way in platforms_data:
             platform = Platform(x, y, w, h, one_way)
             self.platforms.add(platform)
             self.all_sprites.add(platform)
 
-        # Define Enemy Spawn Points
-        self.enemy_spawn_points.append(SpawnPoint(300, self.screen_height - 80, 'Slime', 300, initial_patrol_range=100, initial_walk_speed=self.enemy_walk_speed))
-        self.enemy_spawn_points.append(SpawnPoint(550, self.screen_height - 80, 'Slime', 300, initial_patrol_range=100, initial_walk_speed=self.enemy_walk_speed))
-        self.enemy_spawn_points.append(SpawnPoint(200, self.screen_height - 180, 'Slime', 300, initial_patrol_range=50, initial_walk_speed=self.enemy_walk_speed)) # Another slime on a platform
-        # KingSlime (Boss) spawn point - much longer respawn delay
-        self.enemy_spawn_points.append(SpawnPoint(500, self.screen_height - 280, 'KingSlime', 36000, initial_patrol_range=70, initial_walk_speed=self.enemy_walk_speed * 0.7)) # Replaced a slime with KingSlime
-        self.enemy_spawn_points.append(SpawnPoint(700, self.screen_height - 80, 'Slime', 300, initial_patrol_range=120, initial_walk_speed=self.enemy_walk_speed)) # A fifth slime
+        for x, y, enemy_type, delay, patrol, speed in definition["enemies"]:
+            self.enemy_spawn_points.append(SpawnPoint(x, y, enemy_type, delay, patrol, speed))
 
         # Initial enemy spawn
         for sp in self.enemy_spawn_points:
             self.spawn_enemy(sp)
 
-        # Define portals
-        portal1 = Portal(x=self.screen_width - 80, y=self.screen_height - 100, width=60, height=60, destination_map_id="map_2", destination_spawn_point_id="entry_1")
-        self.portals.add(portal1)
-        self.all_sprites.add(portal1)
+        for x, y, w, h, destination, destination_spawn in definition["portals"]:
+            portal = Portal(x, y, w, h, destination, destination_spawn)
+            self.portals.add(portal)
+            self.all_sprites.add(portal)
 
-        # Define Quests
-        slime_trouble_quest = Quest(
-            q_id='slime_trouble',
-            name='Slime Trouble',
-            objective_type='kill',
-            objective_target='Slime',
-            objective_count=5,
-            reward_exp=50,
-            is_repeatable=True
-        )
-
-        # Define NPC (Farmer John)
-        farmer_john = NPC(
-            x=self.screen_width / 2 - 50,
-            y=self.screen_height - 104, # Adjust Y to stand on ground
-            width=32, height=64,
-            name="Farmer John",
-            initial_dialogue="Hello there! Can you help me? The slimes are multiplying! Will you defeat 5 for me?",
-            quest_active_dialogue="Keep up the good work! Those slimes won't defeat themselves.",
-            quest_complete_dialogue="Ah, thank you, brave adventurer! Here's your reward!",
-            quest_offered=slime_trouble_quest
-        )
-        self.npcs.add(farmer_john)
-        self.all_sprites.add(farmer_john)
-        self.farmer_john = farmer_john # Store reference for easier access
+        for x, y, name, initial, active, complete, quest_key in definition["npcs"]:
+            quest = self._make_slime_quest() if quest_key == "slime_quest" else None
+            npc = NPC(x, y, 32, 64, name, initial, active, complete, quest)
+            self.npcs.add(npc)
+            self.all_sprites.add(npc)
 
         self.game_map = GameMap(self.platforms.sprites(), self.enemies.sprites(), self.portals.sprites())
+        self.player.rect.topleft = definition["spawns"][spawn_point_id]
+        self.player.vel_x = 0
+        self.player.vel_y = 0
+        self.portal_transition_cooldown = 30
+        self.display_notification(self.current_map_name, 90)
 
 
     def display_notification(self, message, duration=120):
@@ -352,6 +421,8 @@ class Game:
 
 
     def update(self):
+        if self.portal_transition_cooldown > 0:
+            self.portal_transition_cooldown -= 1
         # Player.update handles cooldowns during gameplay. Dialogue pauses regular
         # updates, so keep only the potion cooldown moving while dialogue is open.
         if self.dialogue_active and self.player.potion_cooldown_timer > 0:
@@ -400,24 +471,11 @@ class Game:
 
             # Player-portal collision
             for portal in pygame.sprite.spritecollide(self.player, self.portals, False):
+                if self.portal_transition_cooldown > 0:
+                    break
                 print(f"Player entered portal! Destination: {portal.destination_map_id}, Spawn: {portal.destination_spawn_point_id}")
-                # Simulate map transition (for now, just print and maybe reposition player)
-                # If this were a boss arena portal, we'd check `requiresBossDefeatStatus` here.
-                # For now, if the boss is present and player leaves, reset boss.
-                if self.boss_instance and self.boss_instance.state != "DEFEATED":
-                    # If player leaves boss arena mid-fight, reset boss state and clear minions
-                    self.boss_instance.reset_boss_state()
-                    # Remove any MiniSlimes (summoned minions) if the player leaves
-                    for enemy in list(self.enemies):
-                        if isinstance(enemy, MiniSlime):
-                            enemy.kill()
-                            self.enemies.remove(enemy)
-                            self.all_sprites.remove(enemy)
-                    print("Player left boss arena mid-fight. King Slime state reset and minions despawned.")
-
-                self.player.rect.x = 50
-                self.player.rect.y = self.screen_height - 100 # Reset player position
-                # In a real game, this would load a new map
+                self.load_map(portal.destination_map_id, portal.destination_spawn_point_id)
+                break
 
             # Projectile-enemy collision
             for projectile in self.projectiles:
@@ -538,6 +596,9 @@ class Game:
 
 
     def draw_hud(self):
+        map_text = self.font.render(self.current_map_name, True, self.TEXT_COLOR)
+        self.screen.blit(map_text, (self.screen_width - map_text.get_width() - 12, 12))
+
         # HP Bar
         hp_bar_x = self.HUD_X
         hp_bar_y = self.HUD_Y
@@ -620,7 +681,7 @@ class Game:
 
 
     def draw(self):
-        self.screen.fill((135, 206, 235))  # Sky blue background
+        self.screen.fill(self.map_background_color)
         self.all_sprites.draw(self.screen) # Draw all sprites
         self.player.draw(self.screen) # Draw player (and potentially debug hitboxes)
         self.draw_hud() # Draw HUD after all other elements
