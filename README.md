@@ -2,6 +2,14 @@
 
 A small side-scrolling RPG prototype built with Python and Pygame.
 
+## Explore the world
+
+- **Greenleaf Village** — meet Farmer John and Mira, begin the Slime Trouble quest, and practice on field slimes.
+- **Whispering Forest** — follow Ranger Rowan's warning through denser platforms and faster enemies.
+- **Slime King's Hollow** — face King Slime and his summoned minions, with battle advice from Scholar Pip.
+
+Walk into the blue portals at map edges to travel. Your level, EXP, quests, health, mana, and inventory persist between areas.
+
 ## Run the game
 
 ```powershell

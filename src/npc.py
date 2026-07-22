@@ -31,6 +31,9 @@ class NPC(pygame.sprite.Sprite):
 
     def start_talk(self, player_quest_status):
         self.is_talking = True
+        if self.quest_offered is None:
+            self.current_dialogue = self.dialogue_initial
+            return
         if not player_quest_status or not player_quest_status['accepted']:
             self.current_dialogue = self.dialogue_initial
         elif player_quest_status['accepted'] and not player_quest_status['completed']:

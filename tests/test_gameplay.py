@@ -106,6 +106,7 @@ class GameplayTests(unittest.TestCase):
 
     def test_idle_boss_does_not_deal_stomp_damage(self):
         game = Game()
+        game.load_map("slime_hollow", "west_entry")
         boss = game.boss_instance
         game.player.rect.bottom = boss.rect.bottom
         game.player.rect.right = boss.rect.left - 10
@@ -118,6 +119,39 @@ class GameplayTests(unittest.TestCase):
         game.update()
 
         self.assertEqual(game.player.hp, starting_hp)
+
+    def test_world_contains_three_distinct_maps(self):
+        game = Game()
+
+        self.assertEqual(
+            set(game.map_definitions),
+            {"meadow_village", "whispering_forest", "slime_hollow"},
+        )
+        self.assertEqual(game.current_map_id, "meadow_village")
+        self.assertGreaterEqual(len(game.npcs), 2)
+
+    def test_portal_transition_loads_destination_map(self):
+        game = Game()
+        game.portal_transition_cooldown = 0
+        portal = next(iter(game.portals))
+        game.player.rect.center = portal.rect.center
+
+        game.update()
+
+        self.assertEqual(game.current_map_id, "whispering_forest")
+        self.assertEqual(game.current_map_name, "Whispering Forest")
+        self.assertGreaterEqual(len(game.npcs), 2)
+        self.assertGreater(game.portal_transition_cooldown, 0)
+
+    def test_player_progress_persists_between_maps(self):
+        game = Game()
+        game.player.exp = 42
+        game.player.inventory["health_potion"] = 9
+
+        game.load_map("whispering_forest", "west_entry")
+
+        self.assertEqual(game.player.exp, 42)
+        self.assertEqual(game.player.inventory["health_potion"], 9)
 
 
 if __name__ == "__main__":
