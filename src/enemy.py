@@ -47,6 +47,13 @@ class Slime(pygame.sprite.Sprite):
         if self.vel_y > 10:  # Terminal velocity
             self.vel_y = 10
 
+        # Capture the pre-move edges. Pygame Rect stores integers, so deriving
+        # these from a fractional velocity after movement can miss a landing.
+        previous_bottom = self.rect.bottom
+        previous_top = self.rect.top
+        previous_right = self.rect.right
+        previous_left = self.rect.left
+
         # Update position
         self.rect.x += self.vel_x
         self.rect.y += self.vel_y
@@ -56,17 +63,17 @@ class Slime(pygame.sprite.Sprite):
         for platform in platforms:
             if self.rect.colliderect(platform.rect):
                 # Slimes should treat all platforms as solid for simplicity
-                if self.vel_y > 0 and self.rect.bottom - self.vel_y <= platform.rect.top: # Falling and hit top
+                if self.vel_y >= 0 and previous_bottom <= platform.rect.top + 1: # Falling and hit top
                     self.rect.bottom = platform.rect.top
                     self.vel_y = 0
                     self.on_ground = True
-                elif self.vel_y < 0 and self.rect.top - self.vel_y >= platform.rect.bottom: # Jumping and hit bottom
+                elif self.vel_y < 0 and previous_top >= platform.rect.bottom - 1: # Jumping and hit bottom
                     self.rect.top = platform.rect.bottom
                     self.vel_y = 0
-                elif self.vel_x > 0 and self.rect.right - self.vel_x <= platform.rect.left: # Moving right and hit left side
+                elif self.vel_x > 0 and previous_right <= platform.rect.left: # Moving right and hit left side
                     self.rect.right = platform.rect.left
                     self.vel_x = -self.walk_speed # Turn around, use current walk_speed
-                elif self.vel_x < 0 and self.rect.left - self.vel_x >= platform.rect.right: # Moving left and hit right side
+                elif self.vel_x < 0 and previous_left >= platform.rect.right: # Moving left and hit right side
                     self.rect.left = platform.rect.right
                     self.vel_x = self.walk_speed # Turn around, use current walk_speed
 

@@ -153,6 +153,35 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(game.player.exp, 42)
         self.assertEqual(game.player.inventory["health_potion"], 9)
 
+    def test_enemies_remain_supported_on_every_map(self):
+        game = Game()
+        for map_id, definition in game.map_definitions.items():
+            spawn_id = next(iter(definition["spawns"]))
+            game.load_map(map_id, spawn_id)
+
+            for _ in range(180):
+                game.update()
+
+            self.assertTrue(game.enemies, map_id)
+            for enemy in game.enemies:
+                self.assertLessEqual(enemy.rect.bottom, game.screen_height, map_id)
+
+    def test_first_village_platform_is_reachable_by_jumping(self):
+        game = Game()
+        platform = sorted(game.platforms, key=lambda item: item.rect.top)[-2]
+        game.player.rect.midbottom = (platform.rect.centerx, game.screen_height - 40)
+        game.player.on_ground = True
+        game.player.jump()
+
+        landed = False
+        for _ in range(60):
+            game.player.update(game.platforms.sprites())
+            if game.player.on_ground and game.player.rect.bottom == platform.rect.top:
+                landed = True
+                break
+
+        self.assertTrue(landed)
+
 
 if __name__ == "__main__":
     unittest.main()

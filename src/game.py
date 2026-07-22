@@ -200,8 +200,8 @@ class Game:
                 "spawns": {"start": (100, ground_y - 64), "east_entry": (650, ground_y - 64)},
                 "platforms": [
                     (0, ground_y, 800, 40, False),
-                    (130, 440, 180, 20, True),
-                    (410, 355, 170, 20, True),
+                    (130, 480, 180, 20, True),
+                    (410, 400, 170, 20, True),
                 ],
                 "enemies": [
                     (330, 520, "Slime", 300, 80, 1),
@@ -220,9 +220,9 @@ class Game:
                 "spawns": {"west_entry": (85, ground_y - 64), "east_entry": (660, ground_y - 64)},
                 "platforms": [
                     (0, ground_y, 800, 40, False),
-                    (100, 430, 150, 20, True),
-                    (320, 330, 170, 20, True),
-                    (570, 430, 140, 20, True),
+                    (100, 480, 150, 20, True),
+                    (320, 400, 170, 20, True),
+                    (570, 480, 140, 20, True),
                 ],
                 "enemies": [
                     (220, 520, "Slime", 240, 100, 1.2),
@@ -236,7 +236,7 @@ class Game:
                 ],
                 "npcs": [
                     (370, 496, "Ranger Rowan", "The eastern hollow belongs to King Slime. Prepare before entering.", "", "", None),
-                    (135, 366, "Lost Explorer", "These old platforms lead through the canopy. I nearly missed the path home.", "", "", None),
+                    (135, 416, "Lost Explorer", "These old platforms lead through the canopy. I nearly missed the path home.", "", "", None),
                 ],
             },
             "slime_hollow": {
@@ -245,8 +245,8 @@ class Game:
                 "spawns": {"west_entry": (85, ground_y - 64)},
                 "platforms": [
                     (0, ground_y, 800, 40, False),
-                    (180, 400, 140, 20, True),
-                    (480, 400, 140, 20, True),
+                    (180, 480, 140, 20, True),
+                    (480, 480, 140, 20, True),
                 ],
                 "enemies": [
                     (510, 456, "KingSlime", 36000, 70, 0.7),
