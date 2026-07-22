@@ -10,7 +10,7 @@ import pygame
 
 from src.enemy import KingSlime, Slime
 from src.game import Game
-from src.item import BronzeSword
+from src.item import BronzeSword, LeatherCap, TrainingShirt, TravelerPants
 from src.player import Player
 from src.skill import IceBolt
 
@@ -218,6 +218,46 @@ class GameplayTests(unittest.TestCase):
 
         self.assertTrue(game.inventory_open)
         self.assertEqual(game.player.equipped_weapon.item_id, "bronze_sword")
+
+    def test_level_up_awards_five_allocatable_stat_points(self):
+        player = Player(0, 0, 32, 64, 5, -10, 0.5)
+
+        player.gain_exp(player.exp_to_next_level)
+
+        self.assertEqual(player.level, 2)
+        self.assertEqual(player.stat_points, 5)
+        self.assertEqual(player.allocate_stat("strength"), "Strength increased to 5.")
+        self.assertEqual(player.stat_points, 4)
+        self.assertEqual(player.total_stat("strength"), 5)
+
+    def test_armor_slots_add_stats_and_reduce_damage(self):
+        player = Player(0, 0, 32, 64, 5, -10, 0.5)
+        player.equip_armor(LeatherCap())
+        player.equip_armor(TrainingShirt())
+        player.equip_armor(TravelerPants())
+
+        self.assertEqual(player.defense, 7)
+        self.assertEqual(player.total_stat("strength"), 5)
+        self.assertEqual(player.total_stat("dexterity"), 5)
+        self.assertEqual(player.total_stat("luck"), 5)
+
+        player.take_damage(20)
+        self.assertEqual(player.hp, 87)
+
+    def test_inventory_equipment_and_stat_hotkeys(self):
+        game = Game()
+        game.player.stat_points = 1
+        for key in (pygame.K_i, pygame.K_w, pygame.K_e, pygame.K_r, pygame.K_1):
+            pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=key))
+
+        game.handle_input()
+        game.draw()
+
+        self.assertEqual(game.player.equipment["helmet"].item_id, "leather_cap")
+        self.assertEqual(game.player.equipment["shirt"].item_id, "training_shirt")
+        self.assertEqual(game.player.equipment["pants"].item_id, "traveler_pants")
+        self.assertEqual(game.player.stats["strength"], 5)
+        self.assertEqual(game.player.stat_points, 0)
 
 
 if __name__ == "__main__":

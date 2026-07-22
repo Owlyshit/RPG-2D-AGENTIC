@@ -23,3 +23,22 @@ class Weapon(Item):
 class BronzeSword(Weapon):
     def __init__(self):
         super().__init__("bronze_sword", "Bronze Sword", attack_bonus=8, attack_range=42)
+
+class Armor(Item):
+    def __init__(self, item_id, name, slot, defense, stat_bonuses=None):
+        super().__init__(item_id, name, stack_limit=1)
+        self.slot = slot
+        self.defense = defense
+        self.stat_bonuses = stat_bonuses or {}
+
+class LeatherCap(Armor):
+    def __init__(self):
+        super().__init__("leather_cap", "Leather Cap", "helmet", defense=2, stat_bonuses={"dexterity": 1})
+
+class TrainingShirt(Armor):
+    def __init__(self):
+        super().__init__("training_shirt", "Training Shirt", "shirt", defense=3, stat_bonuses={"strength": 1})
+
+class TravelerPants(Armor):
+    def __init__(self):
+        super().__init__("traveler_pants", "Traveler Pants", "pants", defense=2, stat_bonuses={"luck": 1})
