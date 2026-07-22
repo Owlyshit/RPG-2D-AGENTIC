@@ -352,10 +352,9 @@ class Game:
 
 
     def update(self):
-        # Always update player's cooldowns and state, even during dialogue
-        # self.player.update(self.platforms.sprites()) is already called in the !dialogue_active block
-        # But potion cooldown needs to update always
-        if self.player.potion_cooldown_timer > 0:
+        # Player.update handles cooldowns during gameplay. Dialogue pauses regular
+        # updates, so keep only the potion cooldown moving while dialogue is open.
+        if self.dialogue_active and self.player.potion_cooldown_timer > 0:
             self.player.potion_cooldown_timer -= 1
 
         if not self.dialogue_active: # Only update game elements if not talking to NPC
@@ -513,17 +512,18 @@ class Game:
         drop_chance = random.random() # 0.0 to 1.0
         dropped_item = None
 
-        if isinstance(enemy, Slime) or isinstance(enemy, MiniSlime):
-            if drop_chance < 0.2: # 20% chance for a potion
-                if random.random() < 0.6: # 60% of time it's HP potion
-                    dropped_item = HealthPotion()
-                else: # 40% of time it's MP potion
-                    dropped_item = ManaPotion()
-        elif isinstance(enemy, KingSlime):
+        # Check subclasses before Slime because KingSlime and MiniSlime inherit it.
+        if isinstance(enemy, KingSlime):
             if drop_chance < 0.5: # 50% chance for KingSlime to drop a potion
                 if random.random() < 0.7: # Higher chance for HP potion from boss
                     dropped_item = HealthPotion()
                 else:
+                    dropped_item = ManaPotion()
+        elif isinstance(enemy, Slime):
+            if drop_chance < 0.2: # 20% chance for a potion
+                if random.random() < 0.6: # 60% of time it's HP potion
+                    dropped_item = HealthPotion()
+                else: # 40% of time it's MP potion
                     dropped_item = ManaPotion()
 
         if dropped_item:

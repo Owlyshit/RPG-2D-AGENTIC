@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -7,7 +8,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame
 
-from src.enemy import Slime
+from src.enemy import KingSlime, Slime
 from src.game import Game
 from src.player import Player
 from src.skill import IceBolt
@@ -69,6 +70,26 @@ class GameplayTests(unittest.TestCase):
         game.draw()
 
         self.assertTrue(game.running)
+
+    def test_potion_cooldown_decrements_once_per_gameplay_frame(self):
+        game = Game()
+        game.player.potion_cooldown_timer = 60
+
+        game.update()
+
+        self.assertEqual(game.player.potion_cooldown_timer, 59)
+
+    def test_boss_uses_boss_potion_drop_probability(self):
+        game = Game()
+        boss = KingSlime(0, 0, 50, 1, 0.5)
+        initial_potions = sum(game.player.inventory.values())
+
+        # 0.3 misses the regular Slime's 20% drop chance but falls within
+        # the boss's 50% chance. The second value selects a health potion.
+        with patch("src.game.random.random", side_effect=[0.3, 0.5]):
+            game._handle_enemy_drop(0, 0, boss)
+
+        self.assertEqual(sum(game.player.inventory.values()), initial_potions + 1)
 
 
 if __name__ == "__main__":
