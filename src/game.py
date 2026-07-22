@@ -135,6 +135,13 @@ class Game:
         self.dialogue_active = False
         self.current_npc = None
         self.inventory_open = False
+        self.stats_open = False
+        self.inventory_tab = "equip"
+        self.dragged_item_id = None
+        self.inventory_tab_rects = {}
+        self.inventory_item_rects = {}
+        self.equipment_slot_rects = {}
+        self.stat_button_rects = {}
 
 
     def spawn_enemy(self, spawn_point):
@@ -323,15 +330,81 @@ class Game:
         self.notification_timer = duration
         print(f"Notification: {message}") # Also print to console for debugging
 
+    def _inventory_catalog(self):
+        return {
+            "bronze_sword": BronzeSword(),
+            "leather_cap": LeatherCap(),
+            "training_shirt": TrainingShirt(),
+            "traveler_pants": TravelerPants(),
+            "health_potion": HealthPotion(),
+            "mana_potion": ManaPotion(),
+        }
+
+    def _equip_dragged_item(self, item_id, slot):
+        item = self._inventory_catalog()[item_id]
+        if slot == "weapon" and item_id == "bronze_sword":
+            return self.player.equip_weapon(item)
+        if getattr(item, "slot", None) == slot:
+            return self.player.equip_armor(item)
+        return f"{item.name} does not fit the {slot} slot."
+
+    def _handle_inventory_mouse(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for tab, rect in self.inventory_tab_rects.items():
+                if rect.collidepoint(event.pos):
+                    self.inventory_tab = tab
+                    return
+            for item_id, rect in self.inventory_item_rects.items():
+                if rect.collidepoint(event.pos):
+                    self.dragged_item_id = item_id
+                    return
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self.dragged_item_id:
+            message = None
+            for slot, rect in self.equipment_slot_rects.items():
+                if rect.collidepoint(event.pos):
+                    message = self._equip_dragged_item(self.dragged_item_id, slot)
+                    break
+            if message:
+                self.display_notification(message)
+            self.dragged_item_id = None
+
+    def _handle_stats_mouse(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for stat, rect in self.stat_button_rects.items():
+                if rect.collidepoint(event.pos):
+                    self.display_notification(self.player.allocate_stat(stat))
+                    return
+
 
     def handle_input(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
             
+            if self.inventory_open and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                self._handle_inventory_mouse(event)
+                continue
+            if self.stats_open and event.type == pygame.MOUSEBUTTONDOWN:
+                self._handle_stats_mouse(event)
+                continue
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_i:
                     self.inventory_open = not self.inventory_open
+                    self.stats_open = False
+                    self.dragged_item_id = None
+                    continue
+                if event.key == pygame.K_s:
+                    self.stats_open = not self.stats_open
+                    self.inventory_open = False
+                    continue
+                if self.stats_open:
+                    stat_keys = {
+                        pygame.K_1: "strength", pygame.K_2: "dexterity",
+                        pygame.K_3: "intelligence", pygame.K_4: "luck",
+                    }
+                    if event.key in stat_keys:
+                        self.display_notification(self.player.allocate_stat(stat_keys[event.key]))
                     continue
                 if self.inventory_open:
                     equipment_keys = {
@@ -452,7 +525,7 @@ class Game:
         if self.dialogue_active and self.player.potion_cooldown_timer > 0:
             self.player.potion_cooldown_timer -= 1
 
-        if not self.dialogue_active and not self.inventory_open:
+        if not self.dialogue_active and not self.inventory_open and not self.stats_open:
             self.all_sprites.update(self.platforms.sprites()) # Pass platforms for collision
 
             # Update notification timer
@@ -704,69 +777,106 @@ class Game:
         self.screen.blit(inventory_hint, (self.HUD_X, skill_hud_y + (self.BAR_HEIGHT + self.BAR_SPACING) * 3))
 
     def draw_inventory(self):
-        panel = pygame.Rect(70, 55, 660, 490)
+        panel = pygame.Rect(90, 75, 620, 440)
         pygame.draw.rect(self.screen, (37, 45, 58), panel, border_radius=12)
         pygame.draw.rect(self.screen, (218, 174, 84), panel, 4, border_radius=12)
-        title = self.dialogue_font.render("Character & Inventory", True, (255, 232, 160))
+        title = self.dialogue_font.render("Item Inventory", True, (255, 232, 160))
         self.screen.blit(title, (panel.x + 20, panel.y + 14))
 
-        # Paper-doll equipment pane.
-        equipment_panel = pygame.Rect(panel.x + 18, panel.y + 55, 250, 250)
-        pygame.draw.rect(self.screen, (25, 31, 43), equipment_panel, border_radius=8)
-        slot_specs = [
-            ("helmet", "Helmet", (equipment_panel.centerx - 55, equipment_panel.y + 18)),
-            ("shirt", "Shirt", (equipment_panel.centerx - 55, equipment_panel.y + 92)),
-            ("pants", "Pants", (equipment_panel.centerx - 55, equipment_panel.y + 166)),
-            ("weapon", "Weapon", (equipment_panel.x + 12, equipment_panel.y + 92)),
-        ]
-        for slot, label, position in slot_specs:
-            slot_rect = pygame.Rect(position[0], position[1], 110, 58)
-            pygame.draw.rect(self.screen, (63, 72, 90), slot_rect, border_radius=6)
-            pygame.draw.rect(self.screen, (145, 157, 180), slot_rect, 2, border_radius=6)
-            item = self.player.equipped_weapon if slot == "weapon" else self.player.equipment[slot]
-            name = item.name if item else label
-            text_surface = self.font.render(name, True, self.TEXT_COLOR)
-            self.screen.blit(text_surface, (slot_rect.x + 7, slot_rect.centery - 9))
+        self.inventory_tab_rects = {}
+        for index, tab in enumerate(("equip", "use", "etc")):
+            rect = pygame.Rect(panel.x + 190 + index * 105, panel.y + 12, 96, 34)
+            self.inventory_tab_rects[tab] = rect
+            color = (204, 156, 70) if self.inventory_tab == tab else (67, 76, 92)
+            pygame.draw.rect(self.screen, color, rect, border_radius=7)
+            label = self.font.render(tab.title(), True, self.TEXT_COLOR)
+            self.screen.blit(label, label.get_rect(center=rect.center))
 
-        # Bag pane with owned starter gear and consumables.
-        bag_panel = pygame.Rect(panel.x + 286, panel.y + 55, 356, 250)
-        pygame.draw.rect(self.screen, (25, 31, 43), bag_panel, border_radius=8)
-        bag_title = self.font.render("Item Bag", True, (255, 220, 120))
-        self.screen.blit(bag_title, (bag_panel.x + 14, bag_panel.y + 10))
-        items = [
-            ("Q", BronzeSword(), "+8 ATK / 42 range"),
-            ("W", LeatherCap(), "+2 DEF / +1 DEX"),
-            ("E", TrainingShirt(), "+3 DEF / +1 STR"),
-            ("R", TravelerPants(), "+2 DEF / +1 LUK"),
-        ]
-        for index, (key, item, detail) in enumerate(items):
-            owned = self.player.inventory.get(item.item_id, 0)
-            line = f"[{key}] {item.name} x{owned}  {detail}"
-            text_surface = self.font.render(line, True, self.TEXT_COLOR)
-            self.screen.blit(text_surface, (bag_panel.x + 14, bag_panel.y + 45 + index * 34))
-        consumables = self.font.render(
-            f"HP Potion x{self.player.inventory.get('health_potion', 0)}    MP Potion x{self.player.inventory.get('mana_potion', 0)}",
-            True, self.TEXT_COLOR,
-        )
-        self.screen.blit(consumables, (bag_panel.x + 14, bag_panel.y + 192))
+        content = pygame.Rect(panel.x + 18, panel.y + 62, panel.width - 36, 345)
+        pygame.draw.rect(self.screen, (25, 31, 43), content, border_radius=8)
+        self.inventory_item_rects = {}
+        self.equipment_slot_rects = {}
+        catalog = self._inventory_catalog()
 
-        # Character stats and allocation controls.
-        stats_panel = pygame.Rect(panel.x + 18, panel.y + 322, 624, 135)
-        pygame.draw.rect(self.screen, (25, 31, 43), stats_panel, border_radius=8)
-        stat_labels = [("strength", "STR", "1"), ("dexterity", "DEX", "2"), ("intelligence", "INT", "3"), ("luck", "LUK", "4")]
-        for index, (stat, label, key) in enumerate(stat_labels):
-            x = stats_panel.x + 16 + (index % 2) * 210
-            y = stats_panel.y + 16 + (index // 2) * 34
-            value = self.player.total_stat(stat)
-            text_surface = self.font.render(f"[{key}] {label}: {value}", True, self.TEXT_COLOR)
-            self.screen.blit(text_surface, (x, y))
-        totals = self.font.render(
-            f"Level {self.player.level}   AP: {self.player.stat_points}   ATK: {self.player.melee_damage}   DEF: {self.player.defense}",
-            True, (255, 220, 120),
-        )
-        self.screen.blit(totals, (stats_panel.x + 16, stats_panel.y + 88))
+        if self.inventory_tab == "equip":
+            slots = [("helmet", 125, 82), ("shirt", 125, 158), ("pants", 125, 234), ("weapon", 18, 158)]
+            for slot, x, y in slots:
+                rect = pygame.Rect(content.x + x, content.y + y, 96, 58)
+                self.equipment_slot_rects[slot] = rect
+                pygame.draw.rect(self.screen, (59, 69, 86), rect, border_radius=6)
+                pygame.draw.rect(self.screen, (142, 155, 180), rect, 2, border_radius=6)
+                equipped = self.player.equipped_weapon if slot == "weapon" else self.player.equipment[slot]
+                label = equipped.name if equipped else slot.title()
+                text_surface = self.font.render(label, True, self.TEXT_COLOR)
+                self.screen.blit(text_surface, text_surface.get_rect(center=rect.center))
+
+            gear_ids = ["bronze_sword", "leather_cap", "training_shirt", "traveler_pants"]
+            for index, item_id in enumerate(gear_ids):
+                rect = pygame.Rect(content.x + 285, content.y + 24 + index * 72, 270, 58)
+                self.inventory_item_rects[item_id] = rect
+                pygame.draw.rect(self.screen, (52, 62, 78), rect, border_radius=6)
+                item = catalog[item_id]
+                count = self.player.inventory.get(item_id, 0)
+                text_surface = self.font.render(f"{item.name}  x{count}", True, self.TEXT_COLOR)
+                self.screen.blit(text_surface, (rect.x + 12, rect.y + 18))
+            hint = self.font.render("Drag gear onto a matching slot", True, (255, 220, 120))
+            self.screen.blit(hint, (content.x + 14, content.y + 12))
+        elif self.inventory_tab == "use":
+            for index, item_id in enumerate(("health_potion", "mana_potion")):
+                rect = pygame.Rect(content.x + 24 + index * 210, content.y + 45, 190, 70)
+                self.inventory_item_rects[item_id] = rect
+                item = catalog[item_id]
+                count = self.player.inventory.get(item_id, 0)
+                pygame.draw.rect(self.screen, (74, 65, 82), rect, border_radius=7)
+                text_surface = self.font.render(f"{item.name} x{count}", True, self.TEXT_COLOR)
+                self.screen.blit(text_surface, text_surface.get_rect(center=rect.center))
+            hint = self.font.render("Use potions with 1 and 2 during gameplay", True, (255, 220, 120))
+            self.screen.blit(hint, (content.x + 24, content.y + 145))
+        else:
+            lines = ["Etc items and quest materials will appear here.", "Slime Gel x0", "Forest Leaf x0", "Boss Crystal x0"]
+            for index, line in enumerate(lines):
+                text_surface = self.font.render(line, True, self.TEXT_COLOR)
+                self.screen.blit(text_surface, (content.x + 24, content.y + 30 + index * 42))
+
+        if self.dragged_item_id:
+            item = catalog[self.dragged_item_id]
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            drag_rect = pygame.Rect(mouse_x - 55, mouse_y - 20, 110, 40)
+            pygame.draw.rect(self.screen, (218, 174, 84), drag_rect, border_radius=6)
+            label = self.font.render(item.name, True, (25, 31, 43))
+            self.screen.blit(label, label.get_rect(center=drag_rect.center))
+
         close_hint = self.font.render("I - Close", True, self.TEXT_COLOR)
         self.screen.blit(close_hint, (panel.right - 90, panel.y + 18))
+
+    def draw_stats(self):
+        panel = pygame.Rect(205, 95, 390, 410)
+        pygame.draw.rect(self.screen, (37, 45, 58), panel, border_radius=12)
+        pygame.draw.rect(self.screen, (218, 174, 84), panel, 4, border_radius=12)
+        title = self.dialogue_font.render("Character Stats", True, (255, 232, 160))
+        self.screen.blit(title, (panel.x + 22, panel.y + 18))
+        summary = [
+            f"Level: {self.player.level}", f"Available AP: {self.player.stat_points}",
+            f"Attack: {self.player.melee_damage}", f"Defense: {self.player.defense}",
+        ]
+        for index, line in enumerate(summary):
+            text_surface = self.font.render(line, True, self.TEXT_COLOR)
+            self.screen.blit(text_surface, (panel.x + 24 + (index % 2) * 180, panel.y + 65 + (index // 2) * 32))
+
+        self.stat_button_rects = {}
+        stats = [("strength", "STR", "Melee damage"), ("dexterity", "DEX", "Attack speed"), ("intelligence", "INT", "Spell damage"), ("luck", "LUK", "Item drops")]
+        for index, (stat, label, effect) in enumerate(stats):
+            y = panel.y + 145 + index * 58
+            value = self.player.total_stat(stat)
+            text_surface = self.font.render(f"{label}  {value}   {effect}", True, self.TEXT_COLOR)
+            self.screen.blit(text_surface, (panel.x + 25, y + 10))
+            button = pygame.Rect(panel.right - 58, y, 34, 34)
+            self.stat_button_rects[stat] = button
+            pygame.draw.rect(self.screen, (91, 154, 86), button, border_radius=6)
+            plus = self.dialogue_font.render("+", True, self.TEXT_COLOR)
+            self.screen.blit(plus, plus.get_rect(center=button.center))
+        close_hint = self.font.render("S - Close   (1/2/3/4 also allocate)", True, self.TEXT_COLOR)
+        self.screen.blit(close_hint, (panel.x + 24, panel.bottom - 34))
 
 
     def draw_dialogue_box(self, text):
@@ -798,6 +908,8 @@ class Game:
             self.draw_dialogue_box(self.current_npc.current_dialogue)
         if self.inventory_open:
             self.draw_inventory()
+        if self.stats_open:
+            self.draw_stats()
         
         # Draw global notifications
         if self.notification_timer > 0:

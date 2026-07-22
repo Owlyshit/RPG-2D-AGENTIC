@@ -259,6 +259,48 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(game.player.stats["strength"], 5)
         self.assertEqual(game.player.stat_points, 0)
 
+    def test_dragging_sword_to_weapon_slot_equips_it(self):
+        game = Game()
+        game.inventory_open = True
+        game.draw()
+        item_pos = game.inventory_item_rects["bronze_sword"].center
+        slot_pos = game.equipment_slot_rects["weapon"].center
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=item_pos, button=1))
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONUP, pos=slot_pos, button=1))
+
+        game.handle_input()
+
+        self.assertEqual(game.player.equipped_weapon.item_id, "bronze_sword")
+        self.assertIsNone(game.dragged_item_id)
+
+    def test_inventory_tabs_change_with_mouse_click(self):
+        game = Game()
+        game.inventory_open = True
+        game.draw()
+        use_tab_pos = game.inventory_tab_rects["use"].center
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=use_tab_pos, button=1))
+
+        game.handle_input()
+        game.draw()
+
+        self.assertEqual(game.inventory_tab, "use")
+        self.assertIn("health_potion", game.inventory_item_rects)
+
+    def test_s_opens_stats_and_plus_button_allocates_point(self):
+        game = Game()
+        game.player.stat_points = 1
+        pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_s))
+        game.handle_input()
+        game.draw()
+        strength_button = game.stat_button_rects["strength"].center
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=strength_button, button=1))
+
+        game.handle_input()
+
+        self.assertTrue(game.stats_open)
+        self.assertEqual(game.player.stats["strength"], 5)
+        self.assertEqual(game.player.stat_points, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
