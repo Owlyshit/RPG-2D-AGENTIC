@@ -57,37 +57,37 @@ class Game:
         # Load Sounds (Placeholder - replace with actual paths)
         try:
             self.jump_sound = pygame.mixer.Sound('assets/sounds/jump.wav')
-        except pygame.error:
+        except (pygame.error, FileNotFoundError):
             print("Warning: jump.wav not found. Playing dummy sound.")
             self.jump_sound = DummySound()
         try:
             self.melee_sound = pygame.mixer.Sound('assets/sounds/melee.wav')
-        except pygame.error:
+        except (pygame.error, FileNotFoundError):
             print("Warning: melee.wav not found. Playing dummy sound.")
             self.melee_sound = DummySound()
         try:
             self.magic_sound = pygame.mixer.Sound('assets/sounds/magic.wav')
-        except pygame.error:
+        except (pygame.error, FileNotFoundError):
             print("Warning: magic.wav not found. Playing dummy sound.")
             self.magic_sound = DummySound()
         try:
             self.player_hit_sound = pygame.mixer.Sound('assets/sounds/player_hit.wav')
-        except pygame.error:
+        except (pygame.error, FileNotFoundError):
             print("Warning: player_hit.wav not found. Playing dummy sound.")
             self.player_hit_sound = DummySound()
         try:
             self.enemy_hit_sound = pygame.mixer.Sound('assets/sounds/enemy_hit.wav')
-        except pygame.error:
+        except (pygame.error, FileNotFoundError):
             print("Warning: enemy_hit.wav not found. Playing dummy sound.")
             self.enemy_hit_sound = DummySound()
         try:
             self.enemy_death_sound = pygame.mixer.Sound('assets/sounds/enemy_death.wav')
-        except pygame.error:
+        except (pygame.error, FileNotFoundError):
             print("Warning: enemy_death.wav not found. Playing dummy sound.")
             self.enemy_death_sound = DummySound()
         try:
             self.potion_sound = pygame.mixer.Sound('assets/sounds/potion.wav') # New potion sound
-        except pygame.error:
+        except (pygame.error, FileNotFoundError):
             print("Warning: potion.wav not found. Playing dummy sound.")
             self.potion_sound = DummySound()
         
