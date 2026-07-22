@@ -104,6 +104,21 @@ class GameplayTests(unittest.TestCase):
 
         self.assertEqual(slime.hp, starting_hp - game.player.attack_damage)
 
+    def test_idle_boss_does_not_deal_stomp_damage(self):
+        game = Game()
+        boss = game.boss_instance
+        game.player.rect.bottom = boss.rect.bottom
+        game.player.rect.right = boss.rect.left - 10
+        self.assertLessEqual(
+            abs(game.player.rect.centerx - boss.rect.centerx),
+            boss.stomp_land_damage_range,
+        )
+        starting_hp = game.player.hp
+
+        game.update()
+
+        self.assertEqual(game.player.hp, starting_hp)
+
 
 if __name__ == "__main__":
     unittest.main()
