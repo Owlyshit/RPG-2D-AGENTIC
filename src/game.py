@@ -385,7 +385,7 @@ class Game:
             # Check for KingSlime stomp attack damage
             # This check is now explicitly for KingSlime's JUMP_ATTACK state after landing
             if self.boss_instance and isinstance(self.boss_instance, KingSlime):
-                if self.boss_instance.state == "IDLE" and self.boss_instance.on_ground and self.boss_instance.is_mid_air_jump_attack == False: # Just landed from a jump_attack
+                if self.boss_instance.just_landed_jump_attack:
                     # Check if player is in stomp damage range
                     distance_x = abs(self.player.rect.centerx - self.boss_instance.rect.centerx)
                     distance_y = abs(self.player.rect.bottom - self.boss_instance.rect.bottom) # Check proximity to ground

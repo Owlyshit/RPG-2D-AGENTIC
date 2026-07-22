@@ -191,6 +191,7 @@ class KingSlime(Slime): # This is now the Boss Slime
         self.stomp_land_damage_range = 80 # pixels radius around King Slime on landing
         self.stomp_aoe_damage = 40 # Damage dealt by stomp land
         self.is_mid_air_jump_attack = False # Flag to track boss is in the air for jump attack
+        self.just_landed_jump_attack = False # One-frame event consumed by Game
 
         # Summon Minions specific attributes
         self.summon_minions_cooldown = 360 # frames (6 seconds)
@@ -209,6 +210,7 @@ class KingSlime(Slime): # This is now the Boss Slime
         self.minions_spawned_callback = callback
 
     def update(self, platforms):
+        self.just_landed_jump_attack = False
         # Store previous on_ground state before calling super.update
         was_on_ground_before_update = self.on_ground
 
@@ -249,6 +251,7 @@ class KingSlime(Slime): # This is now the Boss Slime
             elif self.on_ground and self.is_mid_air_jump_attack: # Just landed after a jump attack
                 # Trigger AoE damage here (Game class will handle player collision)
                 self.is_mid_air_jump_attack = False # Reset flag
+                self.just_landed_jump_attack = True
                 self.jump_attack_current_cooldown = self.jump_attack_cooldown # Reset cooldown
                 self.state = "IDLE" # Return to idle
                 self.last_attack_type = "JUMP_ATTACK"
@@ -303,6 +306,7 @@ class KingSlime(Slime): # This is now the Boss Slime
         self.vel_x = 0
         self.vel_y = 0
         self.is_mid_air_jump_attack = False
+        self.just_landed_jump_attack = False
         self.jump_attack_current_cooldown = random.randint(60, self.jump_attack_cooldown)
         self.summon_minions_current_cooldown = random.randint(120, self.summon_minions_cooldown)
         self.invincible = False
